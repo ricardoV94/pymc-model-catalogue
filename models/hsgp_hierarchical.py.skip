@@ -1,0 +1,189 @@
+"""
+Model: Hierarchical HSGP
+Source: pymc-examples/examples/gaussian_processes/HSGP-Advanced.ipynb, Section: "Hierarchical HSGP"
+Authors: Bill Engels, Alexandre Andorra, Maxim Kochurov
+Description: Hierarchical GP with HSGP approximation. A mean GP (short + trend)
+    is shared across 10 individual GPs, each with their own lengthscale offset.
+    Uses m=100 basis vectors and c=4.0.
+
+Changes from original:
+- Removed sampling, plotting, prediction, diagnostics
+- Inlined synthetic data generation with fixed seed
+- Added ip capture and initval clearing
+
+Benchmark results:
+- Original:  logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+- Frozen:    logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+"""
+
+from pathlib import Path
+
+import numpy as np
+import pymc as pm
+import pytensor.tensor as pt
+
+
+def build_model():
+    import preliz as pz
+
+    def matern52_psd(omega, ls):
+        num = 2.0 * np.sqrt(np.pi) * pt.gamma(3.0) * pt.power(5.0, 5.0 / 2.0)
+        den = 0.75 * pt.sqrt(np.pi)
+        return (num / den) * ls * pt.power(
+            5.0 + pt.outer(pt.square(omega), pt.square(ls)), -3.0
+        )
+
+    def hierarchical_HSGP(Xs, m, c, eta_mu, ell_mu, eta_delta, ell_delta):
+        L = pm.gp.hsgp_approx.set_boundary(Xs, c)
+        eigvals = pm.gp.hsgp_approx.calc_eigenvalues(L, m)
+        phi = pm.gp.hsgp_approx.calc_eigenvectors(Xs, L, eigvals, m)
+        omega = pt.sqrt(eigvals)
+
+        basis_coeffs = pm.Normal("f_mu_coeffs", mu=0.0, sigma=1.0, dims="m_ix")
+
+        eta_mu_short, eta_mu_trend = eta_mu
+        ell_mu_short, ell_mu_trend = ell_mu
+
+        cov_short = pm.gp.cov.Matern52(input_dim=1, ls=ell_mu_short)
+        cov_trend = pm.gp.cov.Matern52(input_dim=1, ls=ell_mu_trend)
+        sqrt_psd = eta_mu_short * pt.sqrt(
+            cov_short.power_spectral_density(omega).flatten()
+        ) + eta_mu_trend * pt.sqrt(
+            cov_trend.power_spectral_density(omega).flatten()
+        )
+        f_mu = pm.Deterministic("f_mu", phi @ (basis_coeffs * sqrt_psd))
+
+        basis_coeffs = pm.Normal(
+            "f_delta_coeffs", mu=0.0, sigma=1.0, dims=("m_ix", "gp_ix")
+        )
+        sqrt_psd = pt.sqrt(matern52_psd(omega, ell_delta))
+        f_delta = phi @ (basis_coeffs * sqrt_psd * eta_delta)
+
+        return pm.Deterministic("f", f_mu[:, None] + f_delta)
+
+    seed = sum(map(ord, "hsgp"))
+    rng = np.random.default_rng(seed)
+
+    # Generate data
+    x_full = np.linspace(0, 15, 300)
+    n_train = 200
+    x_train = x_full[:n_train]
+
+    eta_mu_trend_true = 3.5
+    ell_mu_trend_true = 10
+    cov_trend = eta_mu_trend_true**2 * pm.gp.cov.Matern52(
+        input_dim=1, ls=ell_mu_trend_true
+    )
+
+    eta_mu_short_true = 2.0
+    ell_mu_short_true = 1.5
+    cov_short = eta_mu_short_true**2 * pm.gp.cov.Matern52(
+        input_dim=1, ls=ell_mu_short_true
+    )
+
+    cov_mu = cov_trend + cov_short
+
+    n_gps = 10
+    eta_delta_true = 3
+    ell_delta_true = pm.draw(
+        pm.Lognormal.dist(mu=np.log(ell_mu_short_true), sigma=0.5),
+        draws=n_gps,
+        random_seed=rng,
+    )
+
+    cov_deltas = [
+        eta_delta_true**2 * pm.gp.cov.Matern52(input_dim=1, ls=ell_i)
+        for ell_i in ell_delta_true
+    ]
+
+    sigma_noise = 0.5
+    noise_dist = pm.Normal.dist(mu=0.0, sigma=sigma_noise)
+
+    n = len(x_full)
+    f_mu_true = pm.draw(
+        pm.MvNormal.dist(mu=np.zeros(n), cov=cov_mu(x_full[:, None])),
+        random_seed=rng,
+    )
+    f_deltas = []
+    for cov_delta in cov_deltas:
+        f_deltas.append(
+            pm.draw(
+                pm.MvNormal.dist(
+                    mu=np.zeros(n), cov=cov_delta(x_full[:, None])
+                ),
+                random_seed=rng,
+            )
+        )
+    f_delta = np.vstack(f_deltas)
+    f_true = f_mu_true[:, None] + f_delta.T
+    y_full = f_true + pm.draw(
+        noise_dist, draws=n * n_gps, random_seed=rng
+    ).reshape(n, n_gps)
+
+    y_train = y_full[:n_train]
+
+    m, c = 100, 4.0
+
+    coords = {
+        "gp_ix": np.arange(n_gps),
+        "m_ix": np.arange(m),
+    }
+
+    with pm.Model(coords=coords) as model:
+        x_center = (np.max(x_train) + np.min(x_train)) / 2
+        X = pm.Data("X", x_train[:, None])
+        Xs = X - x_center
+
+        # Prior for the mean process
+        eta_mu_short = pm.Gamma("eta_mu_short", 2, 2)
+        log_ell_mu_short = pm.Normal("log_ell_mu_short")
+        ell_mu_short = pm.Deterministic(
+            "ell_mu_short", pt.softplus(log_ell_mu_short)
+        )
+
+        eta_mu_trend = pm.Gamma("eta_mu_trend", mu=3.5, sigma=1)
+        ell_mu_trend = pz.maxent(
+            pz.InverseGamma(), lower=5, upper=12, mass=0.95, plot=False
+        ).to_pymc("ell_mu_trend")
+
+        # Prior for the offsets
+        log_ell_delta_offset = pm.ZeroSumNormal(
+            "log_ell_delta_offset", dims="gp_ix"
+        )
+        log_ell_delta_sd = pm.Gamma("log_ell_delta_sd", 2, 2)
+
+        log_ell_delta = log_ell_mu_short + log_ell_delta_sd * log_ell_delta_offset
+        ell_delta = pm.Deterministic(
+            "ell_delta", pt.softplus(log_ell_delta), dims="gp_ix"
+        )
+
+        eta_delta = pm.Gamma("eta_delta", 2, 2)
+
+        # Define full GP
+        f = hierarchical_HSGP(
+            Xs,
+            [m],
+            c,
+            [eta_mu_short, eta_mu_trend],
+            [ell_mu_short, ell_mu_trend],
+            eta_delta,
+            ell_delta,
+        )
+
+        # Observational noise
+        sigma = pm.Exponential("sigma", scale=1)
+
+        # Likelihood
+        pm.Normal(
+            "y", mu=f, sigma=sigma, observed=y_train, shape=(X.shape[0], n_gps)
+        )
+
+    ip = model.initial_point()
+    model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
+    return model, ip
+
+
+if __name__ == "__main__":
+    from _benchmark import run_benchmark
+
+    run_benchmark(build_model)

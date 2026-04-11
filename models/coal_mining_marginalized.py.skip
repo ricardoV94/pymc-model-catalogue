@@ -1,0 +1,58 @@
+"""
+Model: Coal Mining Disasters Switchpoint (marginalized)
+Source: pymc-examples/examples/howto/marginalizing-models.ipynb, Section: "Coal mining model"
+Authors: Rob Zinkov
+Description: Classic coal mining disasters switchpoint model with a discrete `switchpoint`
+    variable marginalized out via `pymc_extras.marginalize`. After marginalization the
+    only remaining free variables are the continuous `early_rate` and `late_rate`
+    Exponential priors, with a Poisson likelihood on the disaster counts (which contain
+    NaNs, so PyMC imputes the missing observations automatically).
+
+Changes from original:
+- Inlined coal mining disaster data
+- Removed sampling, plotting, and `recover_marginals` call
+- Returns the marginalized model (continuous-only) so logp/dlogp are well-defined
+
+Benchmark results:
+- Original:  logp = ..., grad norm = ..., ... us/call (... evals)
+- Frozen:    logp = ..., grad norm = ..., ... us/call (... evals)
+"""
+
+import numpy as np
+import pandas as pd
+import pymc as pm
+import pymc_extras as pmx
+
+
+def build_model():
+    # fmt: off
+    disaster_data = pd.Series(
+        [4, 5, 4, 0, 1, 4, 3, 4, 0, 6, 3, 3, 4, 0, 2, 6,
+        3, 3, 5, 4, 5, 3, 1, 4, 4, 1, 5, 5, 3, 4, 2, 5,
+        2, 2, 3, 4, 2, 1, 3, np.nan, 2, 1, 1, 1, 1, 3, 0, 0,
+        1, 0, 1, 1, 0, 0, 3, 1, 0, 3, 2, 2, 0, 1, 1, 1,
+        0, 1, 0, 1, 0, 0, 0, 2, 1, 0, 0, 0, 1, 1, 0, 2,
+        3, 3, 1, np.nan, 2, 1, 1, 1, 1, 2, 4, 2, 0, 0, 1, 4,
+        0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1]
+    )
+    # fmt: on
+    years = np.arange(1851, 1962)
+
+    with pm.Model() as disaster_model:
+        switchpoint = pm.DiscreteUniform("switchpoint", lower=years.min(), upper=years.max())
+        early_rate = pm.Exponential("early_rate", 1.0)
+        late_rate = pm.Exponential("late_rate", 1.0)
+        rate = pm.math.switch(switchpoint >= years, early_rate, late_rate)
+        disasters = pm.Poisson("disasters", rate, observed=disaster_data)
+
+    model = pmx.marginalize(disaster_model, ["switchpoint"])
+
+    ip = model.initial_point()
+    model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
+    return model, ip
+
+
+if __name__ == "__main__":
+    from _benchmark import run_benchmark
+
+    run_benchmark(build_model)

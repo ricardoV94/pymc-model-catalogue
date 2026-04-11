@@ -1,0 +1,94 @@
+"""
+Model: HSGP 2D Linearized with fixed effects
+Source: pymc-examples/examples/gaussian_processes/HSGP-Basic.ipynb, Section: "Model structure"
+Authors: Bill Engels, Alexandre Andorra
+Description: 2D HSGP with Matern52 covariance using prior_linearized API,
+    combined with fixed-effect regression coefficients. Uses m=[30,30] basis
+    vectors and c=2.0 on Sobol-sampled spatial data.
+
+Changes from original:
+- Removed sampling, plotting, posterior predictive, prediction
+- Inlined synthetic data generation with fixed seed
+- Added ip capture and initval clearing
+
+Benchmark results:
+- Original:  logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+- Frozen:    logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+"""
+
+from pathlib import Path
+
+import numpy as np
+import preliz as pz
+import pymc as pm
+
+
+def build_model():
+    seed = sum(map(ord, "hsgp"))
+    rng = np.random.default_rng(seed)
+
+    # Simulate 2D data
+    from scipy.stats import qmc
+
+    sampler = qmc.Sobol(d=2, scramble=False, optimization="lloyd")
+    X = 20 * sampler.random_base2(m=11) - 10.0
+
+    ix = 1.0 * (np.abs(X[:, 0] // 5) == 1)
+    X = np.hstack((X, ix[:, None]))
+
+    n = X.shape[0]
+    beta0_true = 3.0
+    beta1_true = 2.0
+    ell_true = 1.0
+    eta_true = 1.0
+    sigma_true = 0.75
+
+    cov_func_true = eta_true**2 * pm.gp.cov.Matern52(3, ell_true, active_dims=[0, 1])
+    gp_true = pm.MvNormal.dist(mu=np.zeros(n), cov=cov_func_true(X))
+    f_true = pm.draw(gp_true, draws=1, random_seed=rng)
+
+    mu_true = beta0_true + beta1_true * X[:, 2] + f_true
+    noise_dist = pm.Normal.dist(mu=0.0, sigma=sigma_true)
+    y_obs = mu_true + pm.draw(noise_dist, draws=n, random_seed=rng)
+
+    # Split into train/test
+    ix_tr = (X[:, 1] < 2) | (X[:, 1] > 4)
+    X_tr = X[ix_tr, :]
+    y_tr = y_obs[ix_tr]
+
+    with pm.Model() as model:
+        X_gp = pm.Data("X_gp", X_tr[:, :2])
+        X_fe = pm.Data("X_fe", X_tr[:, 2])
+
+        beta = pm.Normal("beta", mu=0.0, sigma=10.0, shape=2)
+
+        eta = pm.Exponential("eta", scale=2.0)
+        ell_dist = pz.maxent(
+            pz.LogNormal(), lower=0.5, upper=5.0, mass=0.9, plot=False
+        )
+        ell = ell_dist.to_pymc("ell")
+
+        cov_func = eta**2 * pm.gp.cov.Matern52(input_dim=2, ls=ell)
+
+        m0, m1, c = 30, 30, 2.0
+        gp = pm.gp.HSGP(m=[m0, m1], c=c, cov_func=cov_func)
+
+        phi, sqrt_psd = gp.prior_linearized(X=X_gp)
+
+        basis_coeffs = pm.Normal("basis_coeffs", size=gp.n_basis_vectors)
+        f = pm.Deterministic("f", phi @ (basis_coeffs * sqrt_psd))
+
+        mu = pm.Deterministic("mu", beta[0] + beta[1] * X_fe + f)
+
+        sigma = pm.Exponential("sigma", scale=2.0)
+        pm.Normal("y_obs", mu=mu, sigma=sigma, observed=y_tr, shape=X_gp.shape[0])
+
+    ip = model.initial_point()
+    model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
+    return model, ip
+
+
+if __name__ == "__main__":
+    from _benchmark import run_benchmark
+
+    run_benchmark(build_model)

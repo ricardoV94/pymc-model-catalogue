@@ -1,0 +1,59 @@
+"""
+Model: Generalized Extreme Value Distribution (Port Pirie Sea Levels)
+Source: pymc-examples/examples/case_studies/GEV.ipynb, Section: "Modelling & Prediction"
+Authors: Colin Caprani
+Description: GEV distribution model for annual maximum sea-level data at Port Pirie,
+    with inference on location, scale, and shape parameters and a 10-year return level.
+
+Changes from original:
+- Inlined Port Pirie data directly
+- Removed sampling, plotting, and comparison code
+
+Benchmark results:
+- Original:  logp = ..., grad norm = ..., ... us/call (... evals)
+- Frozen:    logp = ..., grad norm = ..., ... us/call (... evals)
+"""
+
+import numpy as np
+import pymc as pm
+import pymc_extras.distributions as pmx
+
+
+def build_model():
+    # fmt: off
+    data = np.array([
+        4.03, 3.83, 3.65, 3.88, 4.01, 4.08, 4.18, 3.80,
+        4.36, 3.96, 3.98, 4.69, 3.85, 3.96, 3.85, 3.93,
+        3.75, 3.63, 3.57, 4.25, 3.97, 4.05, 4.24, 4.22,
+        3.73, 4.37, 4.06, 3.71, 3.96, 4.06, 4.55, 3.79,
+        3.89, 4.11, 3.85, 3.86, 3.86, 4.21, 4.01, 4.11,
+        4.24, 3.96, 4.21, 3.74, 3.85, 3.88, 3.66, 4.11,
+        3.71, 4.18, 3.90, 3.78, 3.91, 3.72, 4.00, 3.66,
+        3.62, 4.33, 4.55, 3.75, 4.08, 3.90, 3.88, 3.94,
+        4.33,
+    ])
+    # fmt: on
+
+    p = 1 / 10  # 10-year return period
+
+    with pm.Model() as model:
+        # Priors
+        mu = pm.Normal("μ", mu=3.8, sigma=0.2)
+        sigma = pm.HalfNormal("σ", sigma=0.3)
+        xi = pm.TruncatedNormal("ξ", mu=0, sigma=0.2, lower=-0.6, upper=0.6)
+
+        # Estimation
+        gev = pmx.GenExtreme("gev", mu=mu, sigma=sigma, xi=xi, observed=data)
+
+        # Return level
+        z_p = pm.Deterministic("z_p", mu - sigma / xi * (1 - (-np.log(1 - p)) ** (-xi)))
+
+    ip = model.initial_point()
+    model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
+    return model, ip
+
+
+if __name__ == "__main__":
+    from _benchmark import run_benchmark
+
+    run_benchmark(build_model)

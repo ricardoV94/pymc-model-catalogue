@@ -1,0 +1,7 @@
+"""
+Skip reason: `jax` is not installed in this .venv. The notebook wraps a JAX
+function as a PyTensor Op via a custom Op class and cannot be imported without
+JAX. Re-attempt once jax is installed.
+
+Source: pymc-examples/examples/howto/wrapping_jax_function.ipynb
+"""

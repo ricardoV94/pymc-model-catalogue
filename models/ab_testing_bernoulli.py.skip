@@ -1,0 +1,56 @@
+"""
+Model: Bayesian A/B Testing - Bernoulli Conversions (Two Variant)
+Source: pymc-examples/examples/causal_inference/bayesian_ab_testing_introduction.ipynb, Section: "Bernoulli Conversions"
+Authors: Cuong Duong
+Description: Two-variant A/B test with Beta-Binomial model for conversion rates, comparing
+    variant B uplift relative to variant A using a weak prior centered at 0.5.
+
+Changes from original:
+- Data generated from scenario 2 (different true rates: A=0.21, B=0.23) with 100k samples
+- Extracted from class-based structure into flat model definition
+- Removed sampling and plotting code
+- Added initval=[0.5, 0.5] to Beta prior (default initial_point is NaN for Beta(100, 100))
+
+Benchmark results:
+- Original:  logp = , grad norm = , us/call ( evals)
+- Frozen:    logp = , grad norm = , us/call ( evals)
+"""
+
+import numpy as np
+import pymc as pm
+
+from scipy.stats import bernoulli
+
+def build_model():
+    # Generate synthetic data faithfully (Scenario 2: different underlying rates)
+    RANDOM_SEED = 4000
+    rng = np.random.default_rng(RANDOM_SEED)
+
+    variants = ["A", "B"]
+    true_rates = [0.21, 0.23]
+    samples_per_variant = 100000
+
+    # Generate binomial data
+    data = {}
+    for variant, p in zip(variants, true_rates):
+        data[variant] = bernoulli.rvs(p, size=samples_per_variant)
+
+    trials = [int(data[v].shape[0]) for v in variants]
+    successes = [int(data[v].sum()) for v in variants]
+
+    # Weak prior (from notebook)
+    alpha_prior = 100
+    beta_prior = 100
+
+    with pm.Model() as model:
+        p = pm.Beta("p", alpha=alpha_prior, beta=beta_prior, shape=2, initval=[0.5, 0.5])
+        obs = pm.Binomial("y", n=trials, p=p, shape=2, observed=successes)
+        reluplift = pm.Deterministic("reluplift_b", p[1] / p[0] - 1)
+
+    ip = model.initial_point()
+    model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
+    return model, ip
+if __name__ == "__main__":
+    from _benchmark import run_benchmark
+
+    run_benchmark(build_model)

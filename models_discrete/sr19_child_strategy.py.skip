@@ -1,0 +1,81 @@
+"""
+Model: Child Learning Strategy Mixture Model
+Source: pymc-examples/examples/statistical_rethinking_lectures/19-Generalized_Linear_Madness.ipynb, Section: "State-based Model"
+Authors: Dustin Stansbury
+Description: Mixture model inferring children's color-choice strategies from experimental data.
+    Five possible strategies (majority, minority, maverick, random, follow-first) are mixed
+    via a Dirichlet-distributed probability vector. Uses CustomDist with a custom log-probability
+    that marginalizes over strategies.
+
+Has discrete variables: Yes (Y - CustomDist with discrete observed)
+
+Changes from original:
+- Loaded data from npz instead of using utils.load_data
+- Inlined strategy_logp function
+- Removed sampling and plotting code
+
+Benchmark results:
+- Original:  logp = , grad norm = , us/call ( evals)
+- Frozen:    logp = , grad norm = , us/call ( evals)
+"""
+
+from pathlib import Path
+
+import numpy as np
+import pymc as pm
+
+
+def build_model():
+    def strategy_logp(y, p, majority_first):
+        SWITCH = pm.math.switch
+        EQ = pm.math.eq
+        N_STRATEGIES = 5
+
+        theta = [0] * N_STRATEGIES
+        theta[0] = SWITCH(EQ(y, 2), 1, 0)  # majority
+        theta[1] = SWITCH(EQ(y, 3), 1, 0)  # minority
+        theta[2] = SWITCH(EQ(y, 1), 1, 0)  # maverick
+        theta[3] = pm.math.ones_like(y) * 1.0 / 3.0  # random color
+        theta[4] = SWITCH(  # follow-first
+            EQ(majority_first, 1),
+            SWITCH(EQ(y, 2), 1, 0),
+            SWITCH(EQ(y, 3), 1, 0),
+        )
+
+        for si in range(N_STRATEGIES):
+            theta[si] = pm.math.log(p[si]) + pm.math.log(theta[si])
+
+        return pm.math.logsumexp(theta, axis=0)
+
+    data = np.load(
+        Path(__file__).parent / "data" / "sr_boxes.npz", allow_pickle=True
+    )
+    Y = data["y"].astype(int)
+    MAJORITY_FIRST = data["majority_first"].astype(int)
+
+    STRATEGY = [
+        "majority",
+        "minority",
+        "maverick",
+        "random color",
+        "follow first",
+    ]
+
+    with pm.Model(coords={"strategy": STRATEGY}) as model:
+        # Prior
+        p = pm.Dirichlet("p", np.array([4, 4, 4, 4, 4]), dims="strategy")
+
+        # Likelihood
+        pm.CustomDist(
+            "Y", p, MAJORITY_FIRST, logp=strategy_logp, observed=Y
+        )
+
+    ip = model.initial_point()
+    model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
+    return model, ip
+
+
+if __name__ == "__main__":
+    from _benchmark import run_benchmark
+
+    run_benchmark(build_model, discrete=True)

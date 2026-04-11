@@ -1,0 +1,68 @@
+"""
+Model: Longitudinal linear censored Gumbel growth model (externalizing behaviour)
+Source: pymc-examples/examples/time_series/longitudinal_models.ipynb, Section: "Behaviour over time"
+Authors: Nathaniel Forde, Osvaldo Martin
+Description: Hierarchical linear growth model of child externalizing behaviour scores in grade with a censored Gumbel likelihood on [0, 68].
+
+Changes from original:
+- Load data from .npz instead of pm.get_data csv
+- pm.MutableData -> pm.Data (pm.MutableData removed from API)
+- Removed sampling/plotting code
+
+Benchmark results:
+- Original:  logp = -1131.7575, grad norm = 130.5648, 14.6 us/call (100000 evals)
+- Frozen:    logp = -1131.7575, grad norm = 130.5648, 5.4 us/call (100000 evals)
+"""
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pymc as pm
+
+
+def build_model():
+    data = np.load(Path(__file__).parent / "data" / "external_pp.npz")
+    ids_raw = data["ID"]
+    external_arr = data["EXTERNAL"]
+    grade_arr = data["GRADE"]
+
+    id_indx, unique_ids = pd.factorize(ids_raw)
+    coords = {"ids": unique_ids, "obs": range(len(external_arr))}
+
+    with pm.Model(coords=coords) as model:
+        grade = pm.Data("grade_data", grade_arr)
+        external = pm.Data("external_data", external_arr + 1e-25)
+        global_intercept = pm.Normal("global_intercept", 6, 1)
+        global_sigma = pm.Normal("global_sigma", 7, 0.5)
+        global_beta_grade = pm.Normal("global_beta_grade", 0, 1)
+
+        subject_intercept_sigma = pm.HalfNormal("subject_intercept_sigma", 2)
+        subject_intercept = pm.Normal(
+            "subject_intercept", 5, subject_intercept_sigma, dims="ids"
+        )
+
+        subject_beta_grade_sigma = pm.HalfNormal("subject_beta_grade_sigma", 1)
+        subject_beta_grade = pm.Normal(
+            "subject_beta_grade", 0, subject_beta_grade_sigma, dims="ids"
+        )
+        mu = pm.Deterministic(
+            "mu",
+            global_intercept
+            + subject_intercept[id_indx]
+            + (global_beta_grade + subject_beta_grade[id_indx]) * grade,
+        )
+        outcome_latent = pm.Gumbel.dist(mu, global_sigma)
+        outcome = pm.Censored(
+            "outcome", outcome_latent, lower=0, upper=68, observed=external, dims="obs"
+        )
+
+    ip = model.initial_point()
+    model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
+    return model, ip
+
+
+if __name__ == "__main__":
+    from _benchmark import run_benchmark
+
+    run_benchmark(build_model)

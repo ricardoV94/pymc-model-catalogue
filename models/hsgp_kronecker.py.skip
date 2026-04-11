@@ -1,0 +1,139 @@
+"""
+Model: Kronecker HSGP (time x space)
+Source: pymc-examples/examples/gaussian_processes/HSGP-Advanced.ipynb, Section: "Kronecker HSGP"
+Authors: Bill Engels, Alexandre Andorra, Maxim Kochurov
+Description: Kronecker product HSGP approximation combining time and space
+    dimensions, each using Matern52 covariance. 30 spatial GPs observed at
+    100 time points. Uses approx_hsgp_hyperparams for m and c selection.
+
+Changes from original:
+- Removed sampling, plotting, diagnostics
+- Inlined synthetic data generation with fixed seed
+- Hardcoded m_t, m_x, c_t, c_x from approx_hsgp_hyperparams output
+- Added ip capture and initval clearing
+
+Benchmark results:
+- Original:  logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+- Frozen:    logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+"""
+
+from pathlib import Path
+
+import numpy as np
+import pymc as pm
+import pytensor.tensor as pt
+
+
+def build_model():
+    import preliz as pz
+
+    def kronecker_HSGP(Xs, m, c, cov_t, cov_x):
+        Xs_t, Xs_x = Xs
+        m_t, m_x = m
+        c_t, c_x = c
+
+        L_t = pm.gp.hsgp_approx.set_boundary(Xs_t, c_t)
+        eigvals_t = pm.gp.hsgp_approx.calc_eigenvalues(L_t, [m_t])
+        phi_t = pm.gp.hsgp_approx.calc_eigenvectors(Xs_t, L_t, eigvals_t, [m_t])
+        omega_t = pt.sqrt(eigvals_t)
+
+        sqrt_psd_t = pt.sqrt(cov_t.power_spectral_density(omega_t))
+        chol_t = phi_t * sqrt_psd_t
+
+        L_x = pm.gp.hsgp_approx.set_boundary(Xs_x, c_x)
+        eigvals_x = pm.gp.hsgp_approx.calc_eigenvalues(L_x, [m_x])
+        phi_x = pm.gp.hsgp_approx.calc_eigenvectors(Xs_x, L_x, eigvals_x, [m_x])
+        omega_x = pt.sqrt(eigvals_x)
+
+        sqrt_psd_x = pt.sqrt(cov_x.power_spectral_density(omega_x))
+        chol_x = phi_x * sqrt_psd_x
+
+        z = pm.Normal("beta", size=m_x * m_t)
+
+        return (chol_x @ (chol_t @ pt.reshape(z, (m_t, m_x))).T).T
+
+    seed = sum(map(ord, "hsgp"))
+    rng = np.random.default_rng(seed)
+
+    n_gps, n_t = 30, 100
+    t = np.linspace(0, 10, n_t)
+    x = np.linspace(-5, 5, n_gps)
+
+    eta_true = 1.0
+    ell_x_true = 2.0
+    cov_x_true = eta_true**2 * pm.gp.cov.Matern52(input_dim=1, ls=ell_x_true)
+    Kx = cov_x_true(x[:, None])
+
+    ell_t_true = 2.0
+    cov_t_true = pm.gp.cov.Matern52(input_dim=1, ls=ell_t_true)
+    Kt = cov_t_true(t[:, None])
+
+    K = pt.slinalg.kron(Kx, Kt)
+    f_true = (
+        pm.draw(
+            pm.MvNormal.dist(mu=np.zeros(n_gps * n_t), cov=K), random_seed=rng
+        )
+        .reshape(n_gps, n_t)
+        .T
+    )
+
+    sigma_noise = 0.5
+    noise_dist = pm.Normal.dist(mu=0.0, sigma=sigma_noise)
+    y_obs = f_true + pm.draw(
+        noise_dist, draws=n_t * n_gps, random_seed=rng
+    ).reshape(n_t, n_gps)
+
+    # Use heuristics for m and c
+    m_t, c_t = pm.gp.hsgp_approx.approx_hsgp_hyperparams(
+        x_range=[np.min(t), np.max(t)],
+        lengthscale_range=[1.0, 3.0],
+        cov_func="matern52",
+    )
+    m_x, c_x = pm.gp.hsgp_approx.approx_hsgp_hyperparams(
+        x_range=[np.min(x), np.max(x)],
+        lengthscale_range=[1.0, 3.0],
+        cov_func="matern52",
+    )
+
+    with pm.Model() as model:
+        xt_center = (np.max(t) + np.min(t)) / 2
+        Xt = pm.Data("Xt", t[:, None])
+        Xs_t = Xt - xt_center
+
+        xx_center = (np.max(x) + np.min(x)) / 2
+        Xx = pm.Data("Xx", x[:, None])
+        Xs_x = Xx - xx_center
+
+        # covariance on time GP
+        ell_t = pz.maxent(
+            pz.LogNormal(), lower=0.5, upper=4.0, mass=0.95, plot=False
+        ).to_pymc("ell_t")
+        cov_t = pm.gp.cov.Matern52(1, ls=ell_t)
+
+        # covariance on space GP
+        ell_x = pz.maxent(
+            pz.LogNormal(), lower=0.5, upper=4.0, mass=0.95, plot=False
+        ).to_pymc("ell_x")
+        cov_x = pm.gp.cov.Matern52(1, ls=ell_x)
+
+        # Kronecker GP
+        eta = pm.Gamma("eta", 2, 2)
+        Xs, m, c = [Xs_t, Xs_x], [m_t, m_x], [c_t, c_x]
+        f = kronecker_HSGP(Xs, m, c, cov_t, cov_x)
+        f = pm.Deterministic("f", eta * f)
+
+        # observational noise
+        sigma = pm.Exponential("sigma", scale=1)
+
+        # likelihood
+        pm.Normal("y", mu=f, sigma=sigma, observed=y_obs)
+
+    ip = model.initial_point()
+    model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
+    return model, ip
+
+
+if __name__ == "__main__":
+    from _benchmark import run_benchmark
+
+    run_benchmark(build_model)

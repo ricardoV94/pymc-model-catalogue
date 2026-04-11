@@ -1,0 +1,149 @@
+"""
+Model: Newtonian State Space Model for Hurricane Tracking (Fiona)
+Source: pymc-examples/examples/case_studies/ssm_hurricane_tracking.ipynb, Section: "Newtonian SSM"
+Authors: Jonathan Dekermanjian
+Description: Constant-acceleration state space model for tracking Hurricane Fiona,
+    using a Kalman filter with 6 states (x, y, vx, vy, ax, ay), deterministic
+    initial conditions, and a single acceleration innovations parameter.
+
+Changes from original:
+- Saved Hurricane Fiona longitude/latitude data to .npz
+- Inlined the NewtonianSSM class definition
+- Removed sampling, forecasting, evaluation, and plotting code
+
+Benchmark results:
+- Original:  logp = ..., grad norm = ..., ... us/call (... evals)
+- Frozen:    logp = ..., grad norm = ..., ... us/call (... evals)
+"""
+
+from pathlib import Path
+
+import numpy as np
+import pymc as pm
+import pytensor.tensor as pt
+
+
+def build_model():
+    from pymc_extras.statespace.core.properties import Coord, Parameter, State
+    from pymc_extras.statespace.core.statespace import PyMCStateSpace
+    from pymc_extras.statespace.utils.constants import (
+        ALL_STATE_AUX_DIM,
+        ALL_STATE_DIM,
+    )
+
+    class NewtonianSSM(PyMCStateSpace):
+        def __init__(self, mode=None):
+            k_states = 6
+            k_posdef = 6
+            k_endog = 2
+            super().__init__(k_endog=k_endog, k_states=k_states, k_posdef=k_posdef, mode=mode)
+
+        def set_states(self):
+            hidden_states = [
+                State(name=name, observed=False, shared=False)
+                for name in ["vx", "vy", "ax", "ay"]
+            ]
+            observed_states = [
+                State(name=name, observed=True, shared=False) for name in ["x", "y"]
+            ]
+            return *hidden_states, *observed_states
+
+        def set_parameters(self):
+            x0_param = Parameter(
+                name="x0",
+                shape=(self.k_states,),
+                dims=(ALL_STATE_DIM,),
+                constraints="None",
+            )
+            P0_param = Parameter(
+                name="P0",
+                shape=(self.k_states, self.k_states),
+                dims=(ALL_STATE_DIM, ALL_STATE_AUX_DIM),
+                constraints="Positive Semi-definite",
+            )
+            acc_innov_param = Parameter(
+                name="acceleration_innovations",
+                shape=(1,),
+                dims=("innovation",),
+                constraints="Positive",
+            )
+            return x0_param, P0_param, acc_innov_param
+
+        def set_coords(self):
+            state_coord = Coord(
+                dimension="state", labels=["x", "y", "vx", "vy", "ax", "ay"]
+            )
+            state_aux_coord = Coord(
+                dimension="state_aux",
+                labels=["x_aux", "y_aux", "vx_aux", "vy_aux", "ax_aux", "ay_aux"],
+            )
+            observed_states_coord = Coord(
+                dimension="observed_state", labels=["x", "y"]
+            )
+            return state_coord, state_aux_coord, observed_states_coord
+
+        def make_symbolic_graph(self):
+            delta_t = 6.0
+            x0 = self.make_and_register_variable("x0", shape=(6,))
+            P0 = self.make_and_register_variable("P0", shape=(6, 6))
+            acceleration_innovations = self.make_and_register_variable(
+                "acceleration_innovations", shape=(1,)
+            )
+
+            self.ssm["transition", :, :] = np.array([
+                [1, 0, delta_t, 0, (delta_t**2) / 2, 0],
+                [0, 1, 0, delta_t, 0, (delta_t**2) / 2],
+                [0, 0, 1, 0, delta_t, 0],
+                [0, 0, 0, 1, 0, delta_t],
+                [0, 0, 0, 0, 1, 0],
+                [0, 0, 0, 0, 0, 1],
+            ])
+
+            self.ssm["selection", :, :] = np.eye(self.k_posdef)
+            self.ssm["design", :, :] = np.array([
+                [1, 0, 0, 0, 0, 0],
+                [0, 1, 0, 0, 0, 0],
+            ])
+
+            self.ssm["initial_state", :] = x0
+            self.ssm["initial_state_cov", :, :] = P0
+
+            self.ssm["state_cov", :, :] = acceleration_innovations**2 * np.array([
+                [(delta_t**4) / 4, 0, (delta_t**3) / 2, 0, (delta_t**2) / 2, 0],
+                [0, (delta_t**4) / 4, 0, (delta_t**3) / 2, 0, (delta_t**2) / 2],
+                [(delta_t**3) / 2, 0, delta_t**2, 0, delta_t, 0],
+                [0, (delta_t**3) / 2, 0, delta_t**2, 0, delta_t],
+                [(delta_t**2) / 2, 0, delta_t, 0, 1, 0],
+                [0, (delta_t**2) / 2, 0, delta_t, 0, 1],
+            ])
+            self.ssm["obs_cov", :, :] = np.eye(2) * 0.5
+
+    data_path = Path(__file__).parent / "data" / "hurricane_fiona.npz"
+    fiona_lon_lat = np.load(data_path)["fiona_lon_lat"]
+
+    n_ssm = NewtonianSSM()
+
+    with pm.Model(coords=n_ssm.coords) as model:
+        x0 = pm.Deterministic(
+            "x0",
+            pt.as_tensor([-49, 16, 0.0, 0.0, 0.0, 0.0]),
+            dims="state",
+        )
+        P0 = pt.eye(6) * 1e-3
+        P0 = pm.Deterministic("P0", P0, dims=("state", "state_aux"))
+
+        acceleration_innovations = pm.Gamma(
+            "acceleration_innovations", 0.1, 5, shape=(1,)
+        )
+
+        n_ssm.build_statespace_graph(data=fiona_lon_lat)
+
+    ip = model.initial_point()
+    model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
+    return model, ip
+
+
+if __name__ == "__main__":
+    from _benchmark import run_benchmark
+
+    run_benchmark(build_model)
