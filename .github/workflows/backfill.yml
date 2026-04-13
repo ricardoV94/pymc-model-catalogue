@@ -1,0 +1,210 @@
+name: Backfill timeline
+
+# Gradual, resumable timeline advancement. Each dispatch advances the
+# `timeline` branch by at most `step` new synthetic commits, walks them
+# one at a time, and publishes after each commit — so partial progress
+# is durable and a single failing pymc release stops the run at the
+# failing commit without losing everything before it. Re-running is
+# cheap (asv --skip-existing-commits no-ops already-measured commits),
+# so "Run workflow" can be clicked repeatedly until the timeline is
+# caught up.
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: "max number of new commits to append this run"
+        required: true
+        default: "3"
+      from_version:
+        description: "floor for the first run (no effect once the ledger has entries)"
+        required: false
+        default: "5.13.0"
+      to_version:
+        description: "optional upper bound X.Y.0"
+        required: false
+      reset:
+        description: "DANGER: wipe the ledger and rebuild timeline from scratch (force-push)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true  # pymc-<ver> tags feed asv's x-axis labels
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            versions/tracked_versions.json
+            asv_bench/_provision.py
+
+      - name: Install tools
+        run: |
+          uv tool install asv
+          pip install pyyaml packaging
+
+      - name: Configure git identity
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Check out or create timeline
+        env:
+          RESET: ${{ github.event.inputs.reset }}
+        run: |
+          set -euo pipefail
+          # On first run timeline doesn't exist on origin — create it from
+          # main, which ships with an empty ledger. No init commit needed:
+          # backfill_history.py will add the first real commit below.
+          if git ls-remote --exit-code --heads origin timeline >/dev/null 2>&1; then
+            git fetch origin timeline:refs/remotes/origin/timeline
+            git checkout -B timeline origin/timeline
+          else
+            git checkout -B timeline
+          fi
+
+          if [ "$RESET" = "true" ]; then
+            # Rewind timeline all the way to main. backfill_history.py will
+            # append fresh commits on top; no orphan empty-ledger commit
+            # lands inside the walked range.
+            git reset --hard main
+          fi
+
+      - name: Append new synthetic commits
+        env:
+          STEP: ${{ github.event.inputs.step }}
+          FROM: ${{ github.event.inputs.from_version }}
+          TO: ${{ github.event.inputs.to_version }}
+        run: |
+          args="--from $FROM --limit $STEP"
+          if [ -n "${TO:-}" ]; then args="$args --to $TO"; fi
+          python scripts/backfill_history.py $args
+
+      - name: Push timeline
+        env:
+          RESET: ${{ github.event.inputs.reset }}
+        run: |
+          if [ "$RESET" = "true" ]; then
+            # --follow-tags pushes the pymc-<ver> tags that backfill_history.py
+            # created; asv reads them as x-axis labels.
+            git push --force-with-lease --follow-tags origin timeline
+            # Mirror the local tag force to the remote so reset=true rebuilds
+            # don't leave stale tags behind pointing at orphaned commits.
+            git push --force --tags origin
+          else
+            git push --follow-tags origin timeline
+          fi
+
+      - name: Register machine
+        run: asv machine --yes --machine ci
+
+      - name: Compute core benchmark filter
+        id: filter
+        run: echo "regex=$(python scripts/core_models.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore previous ASV results from gh-pages
+        env:
+          REMOTE: "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          RESET: ${{ github.event.inputs.reset }}
+        run: |
+          set -euo pipefail
+          if [ "$RESET" = "true" ]; then
+            # reset=true means "throw away the previous timeline". We
+            # skip the results restore so --skip-existing-commits doesn't
+            # reuse measurements from the thrown-away runs. The wipe of
+            # gh-pages/results/ happens inside the walk loop on first
+            # publish so ``asv publish`` observes the fresh state.
+            echo "reset=true — not restoring prior results"
+            exit 0
+          fi
+          rm -rf .gh-pages
+          if git clone --quiet --branch gh-pages --depth 1 "$REMOTE" .gh-pages; then
+            if [ -d .gh-pages/results ]; then
+              mkdir -p .asv/results
+              cp -a .gh-pages/results/. .asv/results/
+            fi
+          fi
+
+      - name: Walk timeline commits, publishing after each
+        env:
+          BENCH: ${{ steps.filter.outputs.regex }}
+          REMOTE: "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          RESET: ${{ github.event.inputs.reset }}
+        run: |
+          set -euo pipefail
+
+          base=$(git merge-base main timeline)
+          commits=$(git rev-list --reverse "${base}..timeline")
+          if [ -z "$commits" ]; then
+            echo "No timeline commits to benchmark."
+            exit 0
+          fi
+
+          # Prepare a reusable gh-pages working copy we keep around for the loop.
+          rm -rf .gh-pages-push
+          if ! git clone --quiet --branch gh-pages --depth 1 "$REMOTE" .gh-pages-push 2>/dev/null; then
+            mkdir -p .gh-pages-push
+            (cd .gh-pages-push && \
+              git init -q -b gh-pages && \
+              git remote add origin "$REMOTE")
+          fi
+          (cd .gh-pages-push && \
+            git config user.name 'github-actions[bot]' && \
+            git config user.email 'github-actions[bot]@users.noreply.github.com')
+
+          if [ "$RESET" = "true" ]; then
+            # Wipe the published results/ subtree so the first post-reset
+            # publish lands on a clean slate. Preserve .git and the
+            # experiments/ subtree (owned by experiment.yml).
+            rm -rf .gh-pages-push/results
+          fi
+
+          failed=""
+          for sha in $commits; do
+            short=$(git rev-parse --short=10 "$sha")
+            echo "::group::benchmark $short"
+            if ! asv run -v --show-stderr --launch-method=spawn --skip-existing-commits --machine ci --bench "$BENCH" "${sha}^!"; then
+              echo "::warning::commit $short failed; stopping walk"
+              failed=$sha
+              echo "::endgroup::"
+              break
+            fi
+            asv publish
+
+            # Replace timeline HTML in the gh-pages working copy. Preserve
+            # .git and the experiments/ subtree (published by experiment.yml).
+            (cd .gh-pages-push && find . -mindepth 1 -maxdepth 1 \
+              ! -name .git ! -name experiments -exec rm -rf {} +)
+            cp -a .asv/html/. .gh-pages-push/
+            mkdir -p .gh-pages-push/results
+            cp -a .asv/results/. .gh-pages-push/results/
+
+            # Rebase onto any concurrent gh-pages update (e.g. an
+            # experiment.yml push while the loop was running) so our push
+            # stays fast-forward. The experiments/ subtree was excluded
+            # from the wipe above, so there's nothing to conflict on.
+            (cd .gh-pages-push && \
+              git add -A && \
+              (git commit -q -m "Publish timeline through $short" || echo "no changes") && \
+              git pull --rebase --autostash -q origin gh-pages 2>/dev/null || true; \
+              git push -q origin gh-pages)
+            echo "::endgroup::"
+          done
+
+          if [ -n "$failed" ]; then
+            echo "::error::halted at $failed — inspect logs and re-dispatch after fixing"
+            exit 1
+          fi
