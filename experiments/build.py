@@ -124,6 +124,75 @@ def prepare_clone(pkg: str, cfg: dict, clone_dir: Path) -> None:
     if patches:
         print(f"[prepare:{pkg}] applying {len(patches)} patch(es)", file=sys.stderr)
         apply_patches(clone_dir, patches)
+    if pkg == "pytensor":
+        patch_pytensor_1992(clone_dir)
+
+
+# Backport of pymc-devs/pytensor#1992. Without this, v3 (and any commit
+# predating the fix) hits LLVM symbol-mangling collisions in numba's disk
+# cache when asv's forkserver runs multiple benchmarks against the same
+# parent process: a second model's op ends up bound to a cached compiled
+# body from a different op with a colliding wrapper name. Symptoms range
+# from LLVM lowering crashes at compile time to silent shape-assertion
+# errors at runtime (e.g. "Vectorized input 0 is expected to have shape
+# 1 in axis 0"). The fix folds the cache key into the wrapper name so
+# symbols stay unique across ops and across fork boundaries.
+#
+# Matched as exact literal text so whitespace drift fails loudly rather
+# than silently leaving unpatched pytensor in the build.
+_PR1992_OLD = """        op_name = jitable_func.__name__
+        cached_func = compile_numba_function_src(
+            src=f"def {op_name}(*args): return jitable_func(*args)",
+            function_name=op_name,
+            global_env=globals() | {"jitable_func": jitable_func},
+            cache_key=f"{cache_key}_fastmath{int(config.numba__fastmath)}",
+        )
+"""
+
+_PR1992_NEW = """        full_cache_key = f"{cache_key}_fastmath{int(config.numba__fastmath)}"
+        safe_key = re.sub(r"[^a-zA-Z0-9_]", "_", full_cache_key)
+        op_name = f"{jitable_func.__name__}_{safe_key}"
+        cached_func = compile_numba_function_src(
+            src=f"def {op_name}(*args): return jitable_func(*args)",
+            function_name=op_name,
+            global_env=globals() | {"jitable_func": jitable_func},
+            cache_key=full_cache_key,
+        )
+"""
+
+_PR1992_APPLIED_MARKER = 'full_cache_key = f"{cache_key}_fastmath'
+
+
+def patch_pytensor_1992(clone_dir: Path) -> None:
+    basic_py = clone_dir / "pytensor" / "link" / "numba" / "dispatch" / "basic.py"
+    if not basic_py.exists():
+        print(
+            f"[prepare:pytensor] no {basic_py.relative_to(clone_dir)} "
+            "— skipping PR 1992 backport",
+            file=sys.stderr,
+        )
+        return
+    src = basic_py.read_text()
+    if _PR1992_APPLIED_MARKER in src:
+        print("[prepare:pytensor] PR 1992 already present — skipping", file=sys.stderr)
+        return
+    if _PR1992_OLD not in src:
+        print(
+            "[prepare:pytensor] basic.py does not match PR 1992's pre-patch "
+            "shape — skipping (likely pre-cache-infra)",
+            file=sys.stderr,
+        )
+        return
+    new_src = src.replace(_PR1992_OLD, _PR1992_NEW, 1)
+    if new_src.count(_PR1992_NEW) != 1:
+        raise RuntimeError(
+            f"PR 1992 backport replacement in {basic_py} did not produce "
+            "exactly one match; aborting to avoid running an unpatched pytensor"
+        )
+    if "\nimport re\n" not in new_src and not new_src.startswith("import re\n"):
+        new_src = new_src.replace("import warnings\n", "import re\nimport warnings\n", 1)
+    basic_py.write_text(new_src)
+    print(f"[prepare:pytensor] applied PR 1992 backport to {basic_py}", file=sys.stderr)
 
 
 def create_venv(venv_dir: Path, pymc_dir: Path, pytensor_dir: Path) -> None:

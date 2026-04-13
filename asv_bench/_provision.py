@@ -75,6 +75,95 @@ def main() -> None:
         check=True,
     )
 
+    _patch_pytensor_numba_cache(env_python)
+
+
+# Pre-patch block as it appears in pytensor on commits that have the numba
+# disk-cache infrastructure but predate pymc-devs/pytensor#1992. Matched as
+# exact literal text so any whitespace drift fails loudly rather than silently
+# leaving an unpatched pytensor in the env.
+_PR1992_OLD = """        op_name = jitable_func.__name__
+        cached_func = compile_numba_function_src(
+            src=f"def {op_name}(*args): return jitable_func(*args)",
+            function_name=op_name,
+            global_env=globals() | {"jitable_func": jitable_func},
+            cache_key=f"{cache_key}_fastmath{int(config.numba__fastmath)}",
+        )
+"""
+
+_PR1992_NEW = """        full_cache_key = f"{cache_key}_fastmath{int(config.numba__fastmath)}"
+        safe_key = re.sub(r"[^a-zA-Z0-9_]", "_", full_cache_key)
+        op_name = f"{jitable_func.__name__}_{safe_key}"
+        cached_func = compile_numba_function_src(
+            src=f"def {op_name}(*args): return jitable_func(*args)",
+            function_name=op_name,
+            global_env=globals() | {"jitable_func": jitable_func},
+            cache_key=full_cache_key,
+        )
+"""
+
+# Sentinel that only appears in the post-1992 version of the file.
+_PR1992_APPLIED_MARKER = 'full_cache_key = f"{cache_key}_fastmath'
+
+
+def _patch_pytensor_numba_cache(env_python: Path) -> None:
+    """Backport pymc-devs/pytensor#1992 into the freshly-installed pytensor.
+
+    Without this, historical pytensor versions that already ship the numba
+    disk-cache infrastructure but predate #1992 crash on LLVM symbol-mangling
+    collisions when asv's two-phase Build→Eval benchmark hits the numba cache
+    across process boundaries. The patch is tiny (one function in one file)
+    and idempotent — we detect already-patched / pre-cache-infra / patchable
+    cases and only rewrite in the last one.
+    """
+    result = subprocess.run(
+        [
+            str(env_python),
+            "-c",
+            "import pytensor, pathlib; print(pathlib.Path(pytensor.__file__).parent)",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    pytensor_dir = Path(result.stdout.strip())
+    basic_py = pytensor_dir / "link" / "numba" / "dispatch" / "basic.py"
+
+    if not basic_py.exists():
+        print(
+            f"[provision] pytensor has no {basic_py.relative_to(pytensor_dir)} "
+            "— skipping PR 1992 backport",
+            file=sys.stderr,
+        )
+        return
+
+    src = basic_py.read_text()
+
+    if _PR1992_APPLIED_MARKER in src:
+        print("[provision] pytensor PR 1992 already applied — skipping", file=sys.stderr)
+        return
+
+    if _PR1992_OLD not in src:
+        print(
+            "[provision] pytensor basic.py does not match PR 1992's pre-patch "
+            "shape — skipping (likely pre-cache-infra)",
+            file=sys.stderr,
+        )
+        return
+
+    new_src = src.replace(_PR1992_OLD, _PR1992_NEW, 1)
+    if new_src.count(_PR1992_NEW) != 1:
+        raise RuntimeError(
+            f"PR 1992 backport replacement in {basic_py} did not produce "
+            "exactly one match; aborting to avoid running an unpatched pytensor"
+        )
+
+    if "\nimport re\n" not in new_src and not new_src.startswith("import re\n"):
+        new_src = new_src.replace("import warnings\n", "import re\nimport warnings\n", 1)
+
+    basic_py.write_text(new_src)
+    print(f"[provision] applied pytensor PR 1992 backport to {basic_py}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()
