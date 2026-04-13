@@ -108,6 +108,21 @@ jobs:
             git push --follow-tags origin timeline
           fi
 
+      - name: Overlay main onto working tree
+        run: |
+          # The walk runs asv against the host working tree, which at
+          # this point sits on the timeline branch. If timeline's base
+          # predates changes on main (new workflows, updated core list,
+          # refactored bench_models), the walk uses stale code. Overlay
+          # every tracked file from origin/main into the working tree
+          # so asv discovers the current benchmark module + filter,
+          # without rebasing timeline's commits (which would invalidate
+          # all existing results by changing their SHAs).
+          #
+          # Must run after backfill_history.py (which requires a clean
+          # working tree) and before asv discovery.
+          git checkout origin/main -- .
+
       - name: Register machine
         run: asv machine --yes --machine ci
 
@@ -208,3 +223,34 @@ jobs:
             echo "::error::halted at $failed — inspect logs and re-dispatch after fixing"
             exit 1
           fi
+
+      - name: Regenerate custom dashboard
+        if: always()
+        env:
+          REMOTE: "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+        run: |
+          set -euo pipefail
+          # Re-clone gh-pages fresh (the walk's working copy may be in an
+          # intermediate state). This step runs even on walk failure so a
+          # partial timeline still gets a refreshed dashboard.
+          rm -rf .gh-pages-dash
+          if ! git clone --quiet --branch gh-pages --depth 1 "$REMOTE" .gh-pages-dash; then
+            echo "gh-pages not yet created — skipping dashboard regen"
+            exit 0
+          fi
+          if [ ! -f .gh-pages-dash/index.json ]; then
+            echo "no asv data on gh-pages — skipping dashboard regen"
+            exit 0
+          fi
+          python scripts/make_dashboard.py .gh-pages-dash .gh-pages-dash/dashboard.html
+          cd .gh-pages-dash
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add dashboard.html
+          if git diff --cached --quiet; then
+            echo "dashboard.html unchanged"
+            exit 0
+          fi
+          git commit -q -m "Regenerate custom dashboard"
+          git pull --rebase --autostash -q origin gh-pages 2>/dev/null || true
+          git push -q origin gh-pages
