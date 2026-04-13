@@ -1,0 +1,9 @@
+{
+  "description": "Ordered list of pymc releases tracked by the ASV timeline. Each entry becomes one synthetic commit and one data point in the dashboard. Only X.Y.0 releases are tracked — patch releases (X.Y.N with N > 0) are skipped because they do not meaningfully move the pytensor pin. Major bumps are treated the same as minor bumps (nothing hardcodes a major). Each commit's asv env installs whatever pymc version appears last in this list at that commit; pytensor comes along as a transitive dependency, resolved as-of the entry's released_at date so historical data points stay reproducible.",
+  "minor_releases": [
+    {
+      "pymc": "5.28.0",
+      "released_at": "2026-02-21"
+    }
+  ]
+}

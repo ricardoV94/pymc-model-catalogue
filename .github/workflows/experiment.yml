@@ -1,0 +1,126 @@
+name: Experiment
+
+on:
+  push:
+    branches: [experiments]
+    paths:
+      - 'experiments/*.yaml'
+      - 'experiments/patches/**'
+      - 'experiments/build.py'
+      - 'scripts/core_models.py'
+  workflow_dispatch:
+    inputs:
+      yaml:
+        description: "experiments/<name>.yaml"
+        required: true
+      force:
+        description: "re-run even if the same content hash already exists on gh-pages"
+        type: boolean
+        default: false
+
+concurrency:
+  group: experiment-${{ github.event.inputs.yaml || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need history for git diff on push events
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install tools
+        run: |
+          uv tool install asv
+          pip install pyyaml packaging
+
+      - name: Determine targets
+        id: targets
+        # Emits a space-separated list of YAML paths to run. For push
+        # events: YAMLs changed in the push. For workflow_dispatch: the
+        # single YAML from the input. Guards against the zero-SHA that
+        # github.event.before carries on first pushes and force-pushes.
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "yamls=${{ github.event.inputs.yaml }}" >> "$GITHUB_OUTPUT"
+          else
+            BEFORE="${{ github.event.before }}"
+            if ! git rev-parse --verify --quiet "$BEFORE^{commit}" >/dev/null; then
+              BEFORE="HEAD~1"
+            fi
+            yamls=$(git diff --name-only "$BEFORE" HEAD \
+              -- 'experiments/*.yaml' | tr '\n' ' ')
+            echo "yamls=$yamls" >> "$GITHUB_OUTPUT"
+          fi
+          echo "selected: $yamls"
+
+      - name: Register machine
+        run: asv machine --yes --machine ci
+
+      - name: Run each experiment
+        env:
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+          YAMLS: ${{ steps.targets.outputs.yamls }}
+        run: |
+          set -euo pipefail
+          if [ -z "${YAMLS// /}" ]; then
+            echo "No experiment YAMLs to run."
+            exit 0
+          fi
+
+          # Fetch existing gh-pages once for hash lookups.
+          git clone --quiet --branch gh-pages --depth 1 \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" .gh-pages || mkdir -p .gh-pages
+
+          for yaml_path in $YAMLS; do
+            [ -f "$yaml_path" ] || { echo "skip missing $yaml_path"; continue; }
+            name=$(python -c "import yaml, sys; print(yaml.safe_load(open(sys.argv[1]))['name'])" "$yaml_path")
+            # Use the SHA of the last commit that touched this YAML as the
+            # version tag: asv's --set-commit-hash rev-parses its argument
+            # so a real git ref is required, and this SHA naturally changes
+            # whenever the YAML changes (or any of its referenced patches
+            # are rewritten), giving content-addressed dedup for free.
+            yaml_sha=$(git log -1 --format=%H -- "$yaml_path")
+            short=$(git rev-parse --short=10 "$yaml_sha")
+            outdir=".gh-pages/experiments/$name/$short"
+
+            if [ "$FORCE" != "true" ] && [ -d "$outdir" ]; then
+              echo "== $name@$short already published — skipping"
+              continue
+            fi
+
+            echo "== building $name ($yaml_path) @ $short"
+            # build.py prints the venv python path to stdout; capture it
+            # instead of hardcoding the layout.
+            venv_py=$(python experiments/build.py "$yaml_path")
+
+            regex=$(python scripts/core_models.py "$yaml_path")
+            asv run \
+              --environment="existing:$venv_py" \
+              --set-commit-hash "$yaml_sha" \
+              --bench "$regex" \
+              --machine ci
+
+            asv publish
+            rm -rf ".gh-pages/experiments/$name/$short"
+            mkdir -p "$outdir"
+            cp -a .asv/html/. "$outdir/"
+          done
+
+      - name: Push experiment results to gh-pages
+        run: |
+          cd .gh-pages
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add experiments
+          git commit -m "Publish experiment results" || echo "no changes"
+          # Rebase onto any concurrent gh-pages update (e.g. a benchmark.yml
+          # push) so our push stays fast-forward. We only staged experiments/
+          # above, so there's nothing to conflict with the timeline top level.
+          git pull --rebase --autostash -q origin gh-pages 2>/dev/null || true
+          git push
