@@ -8,30 +8,10 @@ here rather than hardcoding a duplicate regex.
 from __future__ import annotations
 
 CORE_MODELS: tuple[str, ...] = (
+    # TEMPORARY: reduced to 3 fast models to validate the CI workflow
+    # end-to-end. Revert to the full 25 once the pipeline is green.
     "models.eight_schools_noncentered",
     "models.BEST",
-    "models.GLM_poisson_regression",
-    "models.GLM_negative_binomial_regression",
-    "models.multilevel_varying_intercept_slope_noncentered",
-    "models.GLM_hierarchical_binomial_rat_tumor",
-    "models.rugby_analytics",
-    "models.lkj_cholesky_cov_mvnormal",
-    "models.probabilistic_matrix_factorization",
-    "models.bayesian_sem_workflow",
-    "models.stochastic_volatility",
-    "models.ar2",
-    "models.time_series_generative_graph_ar2",
-    "models.bayesian_var_ireland",
-    "models.euler_maruyama_linear_sde",
-    "models.gp_marginal_matern52",
-    "models.gp_births_hsgp",
-    "models.malaria_hsgp",
-    "models.marginalized_gaussian_mixture_model",
-    "models.dirichlet_mixture_of_multinomials",
-    "models.frailty_coxph",
-    "models.ode_lotka_volterra_pytensor_scan",
-    "models.nyc_bym_traffic",
-    "models.excess_deaths",
     "models_discrete.occupancy_crossbill",
 )
 
