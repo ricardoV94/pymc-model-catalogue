@@ -1,0 +1,44 @@
+name: Detect pymc releases
+
+on:
+  schedule:
+    - cron: '23 7 * * *'  # daily
+  workflow_dispatch:
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install packaging
+        run: pip install packaging
+
+      - name: Bump ledger
+        id: bump
+        run: |
+          python scripts/bump_release.py
+          if git diff --quiet versions/tracked_versions.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open PR
+        if: steps.bump.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "Track new pymc minor release(s)"
+          title: "Track new pymc minor release(s)"
+          body: |
+            Automated update of `versions/tracked_versions.json` from PyPI.
+            Merging this PR adds one data point to the ASV benchmark timeline.
+          branch: auto/track-pymc-release
+          delete-branch: true

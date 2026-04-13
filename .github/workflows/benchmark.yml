@@ -1,0 +1,131 @@
+name: Benchmark
+
+# Regular timeline benchmark run. Triggered on push to `timeline` (usually
+# from merging a detect-releases PR) plus manual dispatch and a weekly
+# safety-net cron. Walks all synthetic commits on the current branch in
+# order and runs each under asv with --skip-existing-commits, so any
+# already-measured commit is a no-op. Publishes to gh-pages after each
+# commit so partial progress is durable — if the install hook breaks on
+# one pymc version, everything before it is still visible on the
+# dashboard.
+
+on:
+  push:
+    branches: [timeline]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true  # pymc-<ver> tags feed asv's x-axis labels
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            versions/tracked_versions.json
+            asv_bench/_provision.py
+
+      - name: Install asv
+        run: |
+          uv tool install asv
+          pip install pyyaml packaging
+
+      - name: Configure git identity
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Register machine
+        run: asv machine --yes --machine ci
+
+      - name: Compute core benchmark filter
+        id: filter
+        run: echo "regex=$(python scripts/core_models.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore previous ASV results from gh-pages
+        env:
+          REMOTE: "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+        run: |
+          set -euo pipefail
+          rm -rf .gh-pages
+          if git clone --quiet --branch gh-pages --depth 1 "$REMOTE" .gh-pages 2>/dev/null; then
+            if [ -d .gh-pages/results ]; then
+              mkdir -p .asv/results
+              cp -a .gh-pages/results/. .asv/results/
+            fi
+          fi
+
+      - name: Walk timeline commits, publishing after each
+        env:
+          BENCH: ${{ steps.filter.outputs.regex }}
+          REMOTE: "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+        run: |
+          set -euo pipefail
+
+          git fetch origin main:refs/remotes/origin/main
+          base=$(git merge-base origin/main HEAD)
+          commits=$(git rev-list --reverse "${base}..HEAD")
+          if [ -z "$commits" ]; then
+            echo "No synthetic commits to benchmark."
+            exit 0
+          fi
+
+          rm -rf .gh-pages-push
+          if ! git clone --quiet --branch gh-pages --depth 1 "$REMOTE" .gh-pages-push 2>/dev/null; then
+            mkdir -p .gh-pages-push
+            (cd .gh-pages-push && \
+              git init -q -b gh-pages && \
+              git remote add origin "$REMOTE")
+          fi
+          (cd .gh-pages-push && \
+            git config user.name 'github-actions[bot]' && \
+            git config user.email 'github-actions[bot]@users.noreply.github.com')
+
+          failed=""
+          for sha in $commits; do
+            short=$(git rev-parse --short=10 "$sha")
+            echo "::group::benchmark $short"
+            if ! asv run -v --show-stderr --skip-existing-commits --machine ci --bench "$BENCH" "${sha}^!"; then
+              echo "::warning::commit $short failed; stopping walk"
+              failed=$sha
+              echo "::endgroup::"
+              break
+            fi
+            asv publish
+
+            # Preserve .git and the experiments/ subtree (experiment.yml owns it).
+            (cd .gh-pages-push && find . -mindepth 1 -maxdepth 1 \
+              ! -name .git ! -name experiments -exec rm -rf {} +)
+            cp -a .asv/html/. .gh-pages-push/
+            mkdir -p .gh-pages-push/results
+            cp -a .asv/results/. .gh-pages-push/results/
+
+            # Rebase onto any concurrent gh-pages update (e.g. an
+            # experiment.yml push) so our push stays fast-forward. The
+            # experiments/ subtree was excluded from the wipe above, so
+            # there's nothing to conflict on.
+            (cd .gh-pages-push && \
+              git add -A && \
+              (git commit -q -m "Publish timeline through $short" || echo "no changes") && \
+              git pull --rebase --autostash -q origin gh-pages 2>/dev/null || true; \
+              git push -q origin gh-pages)
+            echo "::endgroup::"
+          done
+
+          if [ -n "$failed" ]; then
+            echo "::error::halted at $failed"
+            exit 1
+          fi
