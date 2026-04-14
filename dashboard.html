@@ -94,6 +94,10 @@ function pointsFor(model, metric) {
 }
 
 function formatValue(metric, v) {
+  // Asv stores null for failed benchmarks. Handle it here so the
+  // hover-text builder doesn't throw on v.toFixed() and halt the
+  // entire render loop before it reaches the next model row.
+  if (v == null || Number.isNaN(v)) return 'n/a';
   if (metric === 'track_n_rewrites') return v.toFixed(0);
   if (v < 1e-3) return (v * 1e6).toFixed(1) + ' μs';
   if (v < 1) return (v * 1e3).toFixed(0) + ' ms';
