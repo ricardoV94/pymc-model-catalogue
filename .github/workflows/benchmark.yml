@@ -3,7 +3,7 @@ name: Benchmark
 # Regular timeline benchmark run. Triggered on push to `timeline` (usually
 # from merging a detect-releases PR) plus manual dispatch and a weekly
 # safety-net cron. Walks all synthetic commits on the current branch in
-# order and runs each under asv with --skip-existing-commits, so any
+# order and runs each under asv with --skip-existing-successful, so any
 # already-measured commit is a no-op. Publishes to gh-pages after each
 # commit so partial progress is durable — if the install hook breaks on
 # one pymc version, everything before it is still visible on the
@@ -107,15 +107,17 @@ jobs:
             git config user.name 'github-actions[bot]' && \
             git config user.email 'github-actions[bot]@users.noreply.github.com')
 
-          failed=""
+          # Track failures across the walk but never abort. Asv writes
+          # results incrementally — when a single benchmark in a commit
+          # crashes, the other 39 are still on disk and worth
+          # publishing. See backfill.yml for the full rationale.
+          failed_commits=""
           for sha in $commits; do
             short=$(git rev-parse --short=10 "$sha")
             echo "::group::benchmark $short"
-            if ! asv run -v --show-stderr --launch-method=spawn --skip-existing-commits --machine ci --bench "$BENCH" "${sha}^!"; then
-              echo "::warning::commit $short failed; stopping walk"
-              failed=$sha
-              echo "::endgroup::"
-              break
+            if ! asv run -v --show-stderr --launch-method=spawn --skip-existing-successful --machine ci --bench "$BENCH" "${sha}^!"; then
+              echo "::warning::commit $short had benchmark failures — publishing partial results"
+              failed_commits="${failed_commits} ${short}"
             fi
             asv publish
 
@@ -138,9 +140,8 @@ jobs:
             echo "::endgroup::"
           done
 
-          if [ -n "$failed" ]; then
-            echo "::error::halted at $failed"
-            exit 1
+          if [ -n "$failed_commits" ]; then
+            echo "::warning::commits with at least one failed benchmark:$failed_commits"
           fi
 
       - name: Regenerate custom dashboard

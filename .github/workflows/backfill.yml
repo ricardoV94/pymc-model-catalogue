@@ -5,7 +5,7 @@ name: Backfill timeline
 # one at a time, and publishes after each commit — so partial progress
 # is durable and a single failing pymc release stops the run at the
 # failing commit without losing everything before it. Re-running is
-# cheap (asv --skip-existing-commits no-ops already-measured commits),
+# cheap (asv --skip-existing-successful no-ops already-measured benchmarks),
 # so "Run workflow" can be clicked repeatedly until the timeline is
 # caught up.
 
@@ -138,8 +138,8 @@ jobs:
           set -euo pipefail
           if [ "$RESET" = "true" ]; then
             # reset=true means "throw away the previous timeline". We
-            # skip the results restore so --skip-existing-commits doesn't
-            # reuse measurements from the thrown-away runs. The wipe of
+            # skip the results restore so --skip-existing-successful
+            # doesn't reuse measurements from the thrown-away runs. The wipe of
             # gh-pages/results/ happens inside the walk loop on first
             # publish so ``asv publish`` observes the fresh state.
             echo "reset=true — not restoring prior results"
@@ -187,15 +187,22 @@ jobs:
             rm -rf .gh-pages-push/results
           fi
 
-          failed=""
+          # Track failures across the walk but never abort. Asv writes
+          # results incrementally — when a single benchmark in a commit
+          # crashes, the other 39 are still on disk and worth
+          # publishing. Stopping the walk on a non-zero exit (as the
+          # earlier version did) threw away work and left the dashboard
+          # showing pre-walk data. Now we publish after every commit
+          # regardless and raise the failures as a single warning at
+          # the end so the run is annotated but never fails the rest of
+          # the timeline because of one broken model.
+          failed_commits=""
           for sha in $commits; do
             short=$(git rev-parse --short=10 "$sha")
             echo "::group::benchmark $short"
-            if ! asv run -v --show-stderr --launch-method=spawn --skip-existing-commits --machine ci --bench "$BENCH" "${sha}^!"; then
-              echo "::warning::commit $short failed; stopping walk"
-              failed=$sha
-              echo "::endgroup::"
-              break
+            if ! asv run -v --show-stderr --launch-method=spawn --skip-existing-successful --machine ci --bench "$BENCH" "${sha}^!"; then
+              echo "::warning::commit $short had benchmark failures — publishing partial results"
+              failed_commits="${failed_commits} ${short}"
             fi
             asv publish
 
@@ -219,9 +226,8 @@ jobs:
             echo "::endgroup::"
           done
 
-          if [ -n "$failed" ]; then
-            echo "::error::halted at $failed — inspect logs and re-dispatch after fixing"
-            exit 1
+          if [ -n "$failed_commits" ]; then
+            echo "::warning::commits with at least one failed benchmark:$failed_commits"
           fi
 
       - name: Regenerate custom dashboard
