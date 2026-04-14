@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>pymc-model-catalogue &mdash; benchmark dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      background: #fff;
+      color: #222;
+      font-size: 13px;
+    }
+    header {
+      padding: 10px 20px;
+      border-bottom: 1px solid #eaeaea;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 { margin: 0; font-size: 15px; font-weight: 600; }
+    header .meta { color: #888; font-size: 11px; }
+    header .links { margin-left: auto; display: flex; gap: 12px; }
+    header .links a { color: #1f77b4; text-decoration: none; font-size: 12px; }
+    header .links a:hover { text-decoration: underline; }
+    main { padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
+    .model-row {
+      margin-bottom: 14px;
+      display: grid;
+      grid-template-columns: 200px repeat(4, 1fr);
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid #f1f1f1;
+      padding-bottom: 10px;
+    }
+    .model-row h2 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: ui-monospace, SF Mono, Menlo, monospace;
+      color: #333;
+      word-break: break-all;
+      line-height: 1.3;
+    }
+    .plot-wrap { display: flex; flex-direction: column; gap: 2px; }
+    .plot-title {
+      font-size: 10px;
+      color: #888;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .plot { height: 80px; min-width: 0; }
+    .empty {
+      color: #bbb;
+      font-size: 10px;
+      text-align: center;
+      padding: 28px 0;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>pymc-model-catalogue</h1>
+  <span class="meta" id="meta"></span>
+  <div class="links">
+    <a href="./">default asv view</a>
+  </div>
+</header>
+<main id="root"></main>
+<script>
+const PAYLOAD = {"models": ["models.BEST", "models.GLM_hierarchical_binomial_rat_tumor", "models.bayesian_var_ireland", "models.eight_schools_noncentered", "models.frailty_coxph_individual", "models.lkj_cholesky_cov_mvnormal", "models.marginalized_gaussian_mixture_model", "models.multilevel_varying_intercept_slope_noncentered", "models_discrete.occupancy_crossbill"], "metrics": ["track_rewrite_time", "track_compile_time", "track_n_rewrites", "time_eval"], "metric_labels": {"track_rewrite_time": "rewrite_time", "track_compile_time": "compile_time", "track_n_rewrites": "n_rewrites", "time_eval": "eval"}, "metric_units": {"track_rewrite_time": "seconds", "track_compile_time": "seconds", "track_n_rewrites": "count", "time_eval": "seconds"}, "measured_count": 2, "data": {"models.BEST": {"track_compile_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 8.623430636999984}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 8.902630746}], "track_n_rewrites": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 1010.0}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 1010.0}], "track_rewrite_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 7.3195783500000005}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 7.468135072999985}], "time_eval": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 1.72588292282699e-05}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 1.7252153782851715e-05}]}, "models.GLM_hierarchical_binomial_rat_tumor": {"track_compile_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 3.5459385700000325}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 3.6269685570000547}], "track_n_rewrites": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 551.0}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 551.0}], "track_rewrite_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 3.9571011740000017}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 3.92877822000014}], "time_eval": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 1.7262011164297634e-05}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 1.7215449848058005e-05}]}, "models.bayesian_var_ireland": {"track_compile_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 18.75661013499996}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 19.220228333000023}], "track_n_rewrites": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 1220.0}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 1226.0}], "track_rewrite_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 7.3367586869999855}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 7.479116101000045}], "time_eval": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 0.00020064419135802902}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 0.0002401527875008469}]}, "models_discrete.occupancy_crossbill": {"track_compile_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 9.396223348000007}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 9.345101021999994}], "track_n_rewrites": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 168.0}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 168.0}], "track_rewrite_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 3.546749341000009}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 3.566059408000001}], "time_eval": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 4.268071428573503e-05}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 4.2878251712286856e-05}]}, "models.eight_schools_noncentered": {"track_compile_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 2.4039269280000326}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 2.3486570070000425}], "track_n_rewrites": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 290.0}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 290.0}], "track_rewrite_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 1.8592759489999935}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 1.7948879620000753}], "time_eval": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 1.0174779569898072e-05}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 1.036108212998477e-05}]}, "models.frailty_coxph_individual": {"track_compile_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 13.735811274000014}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 13.647066016999815}], "track_n_rewrites": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 721.0}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 721.0}], "track_rewrite_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 4.764425928999913}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 4.7796953490001215}], "time_eval": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 0.0014889592999992375}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 0.0014615117499943153}]}, "models.lkj_cholesky_cov_mvnormal": {"track_compile_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 13.382925112000066}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 13.880116397000165}], "track_n_rewrites": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 997.0}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 1003.0}], "track_rewrite_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 4.175946865000014}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 4.213127665000002}], "time_eval": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 0.0042006938333164125}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 0.005169808000005105}]}, "models.marginalized_gaussian_mixture_model": {"track_compile_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 11.14398344999995}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 11.172368773000017}], "track_n_rewrites": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 1157.0}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 1159.0}], "track_rewrite_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 9.564727222999977}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 9.598554033000028}], "time_eval": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 0.00017544944690237458}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 0.0001932266902663005}]}, "models.multilevel_varying_intercept_slope_noncentered": {"track_compile_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 4.210579974999973}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 4.093648805999919}], "track_n_rewrites": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 588.0}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 588.0}], "track_rewrite_time": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 3.0168956869999874}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 3.0060499500000333}], "time_eval": [{"tag": "pymc-5.13.0", "hash": "7e81a983cec1c244178c34ae8f84bd2e36888e06", "value": 2.716215231786264e-05}, {"tag": "pymc-5.14.0", "hash": "32548c8a56f91c770e6725315096a1342e2bacf8", "value": 2.6543736051713855e-05}]}}};
+
+const LAYOUT_BASE = {
+  paper_bgcolor: '#fff',
+  plot_bgcolor: '#fff',
+  font: { color: '#222', size: 9, family: 'system-ui' },
+  margin: { l: 4, r: 4, t: 2, b: 2 },
+  showlegend: false,
+  xaxis: { visible: false, fixedrange: true },
+  yaxis: { visible: false, fixedrange: true },
+};
+const PLOTLY_CONFIG = { displayModeBar: false, responsive: true };
+
+function pointsFor(model, metric) {
+  const d = PAYLOAD.data[model] && PAYLOAD.data[model][metric];
+  if (!d) return { x: [], y: [] };
+  return {
+    x: d.map(p => p.tag),
+    y: d.map(p => p.value),
+  };
+}
+
+function formatValue(metric, v) {
+  if (metric === 'track_n_rewrites') return v.toFixed(0);
+  if (v < 1e-3) return (v * 1e6).toFixed(1) + ' μs';
+  if (v < 1) return (v * 1e3).toFixed(0) + ' ms';
+  return v.toFixed(2) + ' s';
+}
+
+function makeSparkline(div, pts, metric) {
+  if (pts.x.length === 0) {
+    div.innerHTML = '<div class="empty">no data</div>';
+    return;
+  }
+  const hoverText = pts.x.map((tag, i) =>
+    `<b>${tag}</b><br>${formatValue(metric, pts.y[i])}`
+  );
+  Plotly.newPlot(div, [{
+    x: pts.x,
+    y: pts.y,
+    mode: 'lines+markers',
+    line: { color: '#1f77b4', width: 1.5, shape: 'linear' },
+    marker: { size: 4, color: '#1f77b4' },
+    hovertemplate: '%{text}<extra></extra>',
+    text: hoverText,
+  }], LAYOUT_BASE, PLOTLY_CONFIG);
+}
+
+function render() {
+  const root = document.getElementById('root');
+  root.innerHTML = '';
+  PAYLOAD.models.forEach(model => {
+    const row = document.createElement('div');
+    row.className = 'model-row';
+    let html = `<h2>${model}</h2>`;
+    PAYLOAD.metrics.forEach(metric => {
+      html += `<div class="plot-wrap"><div class="plot-title">${PAYLOAD.metric_labels[metric]}</div><div class="plot" data-metric="${metric}"></div></div>`;
+    });
+    row.innerHTML = html;
+    root.appendChild(row);
+    row.querySelectorAll('.plot').forEach(div => {
+      const metric = div.dataset.metric;
+      makeSparkline(div, pointsFor(model, metric), metric);
+    });
+  });
+}
+
+document.getElementById('meta').textContent =
+  PAYLOAD.models.length + ' models · ' +
+  PAYLOAD.measured_count + ' pymc versions measured';
+
+render();
+</script>
+</body>
+</html>
