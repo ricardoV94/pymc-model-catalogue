@@ -6,7 +6,7 @@ set of ~200 models extracted from pymc-examples. Each model is a standalone
 `build_model() -> (Model, initial_point)` function; the benchmark wraps
 them in an asv `ModelBench` class and captures four metrics per model.
 
-**Dashboard:** https://ricardov94.github.io/pymc-model-catalogue/
+**Dashboard:** https://ricardov94.github.io/pymc-model-catalogue/dashboard.html
 
 ## Metrics
 
