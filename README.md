@@ -94,6 +94,6 @@ Local development uses current pymc/pytensor branches:
 
 ```bash
 uv pip install "pymc @ git+https://github.com/pymc-devs/pymc.git@v6" \
-               "pytensor @ git+https://github.com/pymc-devs/pytensor.git@v3" \
+               "pytensor @ git+https://github.com/pymc-devs/pytensor.git@main" \
                numba asv
 ```
