@@ -124,6 +124,81 @@ def prepare_clone(pkg: str, cfg: dict, clone_dir: Path) -> None:
     if patches:
         print(f"[prepare:{pkg}] applying {len(patches)} patch(es)", file=sys.stderr)
         apply_patches(clone_dir, patches)
+    if pkg == "pytensor":
+        patch_pytensor_2079(clone_dir)
+        patch_pytensor_mpm_cheap(clone_dir)
+
+
+# Backport of pymc-devs/pytensor#2079, appended to pytensor's
+# link/numba/cache.py. Replaces numba's sequential FunctionIdentity._unique_ids
+# counter with a UUID iterator so sibling forks fresh-compiling same-qualname
+# functions can't allocate colliding LLVM symbols. Without it, pytensor refs
+# that ship the numba disk-cache infrastructure but predate #2079 segfault
+# under asv's forkserver when sibling benchmarks hit the cache.
+_PR2079_MARKER = "FunctionIdentity._unique_ids = _RandomUidIter()"
+_PR2079_PATCH = '''
+
+# pymc-devs/pytensor#2079 backport
+import uuid
+from numba.core.bytecode import FunctionIdentity
+
+
+class _RandomUidIter:
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return uuid.uuid4().int
+
+
+FunctionIdentity._unique_ids = _RandomUidIter()
+'''
+
+
+def patch_pytensor_2079(clone_dir: Path) -> None:
+    """Idempotent: skipped if cache.py is missing (pre-cache-infra) or the
+    patch is already in place (post-#2079)."""
+    cache_py = clone_dir / "pytensor" / "link" / "numba" / "cache.py"
+    if not cache_py.exists():
+        print(
+            f"[prepare:pytensor] no {cache_py.relative_to(clone_dir)} "
+            "— skipping PR 2079 backport (pre-cache-infra)",
+            file=sys.stderr,
+        )
+        return
+    src = cache_py.read_text()
+    if _PR2079_MARKER in src:
+        print("[prepare:pytensor] PR 2079 already present — skipping", file=sys.stderr)
+        return
+    cache_py.write_text(src + _PR2079_PATCH)
+    print(f"[prepare:pytensor] applied PR 2079 backport to {cache_py}", file=sys.stderr)
+
+
+_MPM_CHEAP_MARKER = "# _mpm_cheap no-op override"
+_MPM_CHEAP_NOOP = '''
+
+# _mpm_cheap no-op override
+import contextlib as _contextlib
+
+@_contextlib.contextmanager
+def use_optimized_cheap_pass():
+    yield
+'''
+
+
+def patch_pytensor_mpm_cheap(clone_dir: Path) -> None:
+    """Idempotent: skipped if basic.py is missing or _mpm_cheap isn't referenced."""
+    basic_py = clone_dir / "pytensor" / "link" / "numba" / "dispatch" / "basic.py"
+    if not basic_py.exists():
+        return
+    src = basic_py.read_text()
+    if _MPM_CHEAP_MARKER in src:
+        print("[prepare:pytensor] _mpm_cheap no-op already present — skipping", file=sys.stderr)
+        return
+    if "_mpm_cheap" not in src:
+        return
+    basic_py.write_text(src + _MPM_CHEAP_NOOP)
+    print(f"[prepare:pytensor] applied _mpm_cheap no-op to {basic_py}", file=sys.stderr)
 
 
 def create_venv(venv_dir: Path, pymc_dir: Path, pytensor_dir: Path) -> None:

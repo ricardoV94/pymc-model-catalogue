@@ -75,6 +75,128 @@ def main() -> None:
         check=True,
     )
 
+    pytensor_dir = _find_pytensor(env_python)
+    if pytensor_dir is not None:
+        _patch_pytensor_numba_cache(pytensor_dir)
+        _patch_pytensor_mpm_cheap(pytensor_dir)
+
+
+def _find_pytensor(env_python: Path) -> Path | None:
+    """Locate the installed pytensor package directory.
+
+    Returns None (with a warning) if pytensor cannot be imported — e.g.
+    old pytensor wheels with native extensions that are incompatible with
+    the runner's Python. Callers should skip patches rather than crash.
+    """
+    result = subprocess.run(
+        [
+            str(env_python),
+            "-c",
+            "import pytensor, pathlib; print(pathlib.Path(pytensor.__file__).parent)",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(
+            "[provision] pytensor cannot be imported — skipping retroactive "
+            f"patches (exit {result.returncode})\n{result.stderr}",
+            file=sys.stderr,
+        )
+        return None
+    return Path(result.stdout.strip())
+
+
+# Backport of pymc-devs/pytensor#2079, appended to the installed pytensor's
+# link/numba/cache.py. Replaces numba's sequential FunctionIdentity._unique_ids
+# counter with a UUID iterator so sibling forks fresh-compiling same-qualname
+# functions can't allocate colliding LLVM symbols. Without it, older pytensors
+# that ship the numba disk-cache infrastructure but predate #2079 segfault
+# under asv's two-phase Build->Eval cycle when the cache is hit across process
+# boundaries.
+_PR2079_MARKER = "FunctionIdentity._unique_ids = _RandomUidIter()"
+_PR2079_PATCH = '''
+
+# pymc-devs/pytensor#2079 backport
+import uuid
+from numba.core.bytecode import FunctionIdentity
+
+
+class _RandomUidIter:
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return uuid.uuid4().int
+
+
+FunctionIdentity._unique_ids = _RandomUidIter()
+'''
+
+
+def _patch_pytensor_numba_cache(pytensor_dir: Path) -> None:
+    """Backport pymc-devs/pytensor#2079 into the freshly-installed pytensor.
+
+    Idempotent: skipped if cache.py is missing (pre-cache-infra, the bug
+    can't manifest) or if the patch is already in place (post-#2079).
+    """
+    cache_py = pytensor_dir / "link" / "numba" / "cache.py"
+
+    if not cache_py.exists():
+        print(
+            f"[provision] pytensor has no {cache_py.relative_to(pytensor_dir)} "
+            "— skipping PR 2079 backport (pre-cache-infra)",
+            file=sys.stderr,
+        )
+        return
+
+    src = cache_py.read_text()
+    if _PR2079_MARKER in src:
+        print("[provision] pytensor PR 2079 already applied — skipping", file=sys.stderr)
+        return
+
+    cache_py.write_text(src + _PR2079_PATCH)
+    print(f"[provision] applied pytensor PR 2079 backport to {cache_py}", file=sys.stderr)
+
+
+# Pytensor versions ~2.23–2.26 define use_optimized_cheap_pass() which accesses
+# numba's JITCPUCodegen._mpm_cheap — an internal that was removed in the numba
+# version the runner ships. Pytensor dropped the call upstream but the
+# period-correct installs still have it. Replacing the function with a no-op
+# avoids the AttributeError at benchmark time (only gp_marginal_matern52 and
+# other models hitting the CAReduce numba path are affected).
+_MPM_CHEAP_MARKER = "# _mpm_cheap no-op override"
+_MPM_CHEAP_NOOP = '''
+
+# _mpm_cheap no-op override
+import contextlib as _contextlib
+
+@_contextlib.contextmanager
+def use_optimized_cheap_pass():
+    yield
+'''
+
+
+def _patch_pytensor_mpm_cheap(pytensor_dir: Path) -> None:
+    """Replace use_optimized_cheap_pass with a no-op if it accesses _mpm_cheap.
+
+    Idempotent: skipped if basic.py is missing, if _mpm_cheap is not
+    referenced, or if the no-op override is already appended.
+    """
+    basic_py = pytensor_dir / "link" / "numba" / "dispatch" / "basic.py"
+    if not basic_py.exists():
+        return
+
+    src = basic_py.read_text()
+    if _MPM_CHEAP_MARKER in src:
+        print("[provision] _mpm_cheap no-op already applied — skipping", file=sys.stderr)
+        return
+    if "_mpm_cheap" not in src:
+        return
+
+    basic_py.write_text(src + _MPM_CHEAP_NOOP)
+    print(f"[provision] applied _mpm_cheap no-op to {basic_py}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()
