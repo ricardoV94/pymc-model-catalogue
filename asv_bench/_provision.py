@@ -75,6 +75,71 @@ def main() -> None:
         check=True,
     )
 
+    _patch_pytensor_numba_cache(env_python)
+
+
+# Backport of pymc-devs/pytensor#2079, appended to the installed pytensor's
+# link/numba/cache.py. Replaces numba's sequential FunctionIdentity._unique_ids
+# counter with a UUID iterator so sibling forks fresh-compiling same-qualname
+# functions can't allocate colliding LLVM symbols. Without it, older pytensors
+# that ship the numba disk-cache infrastructure but predate #2079 segfault
+# under asv's two-phase Build->Eval cycle when the cache is hit across process
+# boundaries.
+_PR2079_MARKER = "FunctionIdentity._unique_ids = _RandomUidIter()"
+_PR2079_PATCH = '''
+
+# pymc-devs/pytensor#2079 backport
+import uuid
+from numba.core.bytecode import FunctionIdentity
+
+
+class _RandomUidIter:
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return uuid.uuid4().int
+
+
+FunctionIdentity._unique_ids = _RandomUidIter()
+'''
+
+
+def _patch_pytensor_numba_cache(env_python: Path) -> None:
+    """Backport pymc-devs/pytensor#2079 into the freshly-installed pytensor.
+
+    Idempotent: skipped if cache.py is missing (pre-cache-infra, the bug
+    can't manifest) or if the patch is already in place (post-#2079).
+    """
+    result = subprocess.run(
+        [
+            str(env_python),
+            "-c",
+            "import pytensor, pathlib; print(pathlib.Path(pytensor.__file__).parent)",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    pytensor_dir = Path(result.stdout.strip())
+    cache_py = pytensor_dir / "link" / "numba" / "cache.py"
+
+    if not cache_py.exists():
+        print(
+            f"[provision] pytensor has no {cache_py.relative_to(pytensor_dir)} "
+            "— skipping PR 2079 backport (pre-cache-infra)",
+            file=sys.stderr,
+        )
+        return
+
+    src = cache_py.read_text()
+    if _PR2079_MARKER in src:
+        print("[provision] pytensor PR 2079 already applied — skipping", file=sys.stderr)
+        return
+
+    cache_py.write_text(src + _PR2079_PATCH)
+    print(f"[provision] applied pytensor PR 2079 backport to {cache_py}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()
