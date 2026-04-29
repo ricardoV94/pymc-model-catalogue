@@ -166,8 +166,12 @@ def main() -> int:
         run_git(["add", str(LEDGER_PATH.relative_to(REPO_ROOT))])
         run_git(["commit", "-m", f"Track pymc {entry['pymc']}"])
         # Tag the commit so asv's timeline x-axis shows the version label.
+        # Annotated (-a/-m) so backfill.yml's `git push --follow-tags`
+        # picks the tag up — lightweight tags are silently dropped by
+        # --follow-tags, which is how 5.15..5.22 (and later 5.23..5.28)
+        # ended up labelless on origin and required manual retagging.
         # -f lets reset=true rebuilds reuse the same tag name.
-        run_git(["tag", "-f", f"pymc-{entry['pymc']}"])
+        run_git(["tag", "-a", "-m", f"pymc {entry['pymc']}", "-f", f"pymc-{entry['pymc']}"])
 
     print(f"Appended {len(new)} commit(s) to branch 'timeline'", file=sys.stderr)
     return 0

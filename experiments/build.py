@@ -126,6 +126,7 @@ def prepare_clone(pkg: str, cfg: dict, clone_dir: Path) -> None:
         apply_patches(clone_dir, patches)
     if pkg == "pytensor":
         patch_pytensor_2079(clone_dir)
+        patch_pytensor_mpm_cheap(clone_dir)
 
 
 # Backport of pymc-devs/pytensor#2079, appended to pytensor's
@@ -171,6 +172,33 @@ def patch_pytensor_2079(clone_dir: Path) -> None:
         return
     cache_py.write_text(src + _PR2079_PATCH)
     print(f"[prepare:pytensor] applied PR 2079 backport to {cache_py}", file=sys.stderr)
+
+
+_MPM_CHEAP_MARKER = "# _mpm_cheap no-op override"
+_MPM_CHEAP_NOOP = '''
+
+# _mpm_cheap no-op override
+import contextlib as _contextlib
+
+@_contextlib.contextmanager
+def use_optimized_cheap_pass():
+    yield
+'''
+
+
+def patch_pytensor_mpm_cheap(clone_dir: Path) -> None:
+    """Idempotent: skipped if basic.py is missing or _mpm_cheap isn't referenced."""
+    basic_py = clone_dir / "pytensor" / "link" / "numba" / "dispatch" / "basic.py"
+    if not basic_py.exists():
+        return
+    src = basic_py.read_text()
+    if _MPM_CHEAP_MARKER in src:
+        print("[prepare:pytensor] _mpm_cheap no-op already present — skipping", file=sys.stderr)
+        return
+    if "_mpm_cheap" not in src:
+        return
+    basic_py.write_text(src + _MPM_CHEAP_NOOP)
+    print(f"[prepare:pytensor] applied _mpm_cheap no-op to {basic_py}", file=sys.stderr)
 
 
 def create_venv(venv_dir: Path, pymc_dir: Path, pytensor_dir: Path) -> None:
