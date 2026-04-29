@@ -76,6 +76,15 @@ def main() -> None:
     )
 
     pytensor_dir = _find_pytensor(env_python)
+    if pytensor_dir is None:
+        # Older pytensor wheels are incompatible with the numpy 2.0 ABI.
+        # Downgrade numpy and retry.
+        print("[provision] retrying with numpy<2", file=sys.stderr)
+        subprocess.run(
+            ["uv", "pip", "install", "--python", str(env_python), "numpy<2"],
+            check=True,
+        )
+        pytensor_dir = _find_pytensor(env_python)
     if pytensor_dir is not None:
         _patch_pytensor_numba_cache(pytensor_dir)
         _patch_pytensor_mpm_cheap(pytensor_dir)
