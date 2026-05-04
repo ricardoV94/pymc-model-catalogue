@@ -1,0 +1,1 @@
+{"name": "shape_feature_pr2056", "description": "Test pytensor#2056 (\"Rewrite ShapeFeature to not hold live variables\"). Replaces the eager per-variable dict in ShapeFeature with a lazy FrozenFunctionGraph-based shape kernel cache.\n", "yaml_path": "experiments/shape_feature_pr2056.yaml", "base": "shape_feature_pr2056_base"}
