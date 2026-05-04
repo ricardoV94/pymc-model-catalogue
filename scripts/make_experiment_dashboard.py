@@ -271,9 +271,27 @@ ALL_EXPERIMENTS.forEach(e => {
   baseSel.add(new Option(e, e));
   compareSel.add(new Option(e, e));
 });
-if (ALL_EXPERIMENTS.includes('base')) baseSel.value = 'base';
-const nonBase = ALL_EXPERIMENTS.find(e => e !== baseSel.value);
-if (nonBase) compareSel.value = nonBase;
+function readHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const b = params.get('base');
+  const c = params.get('compare');
+  if (b && ALL_EXPERIMENTS.includes(b)) baseSel.value = b;
+  else if (ALL_EXPERIMENTS.includes('base')) baseSel.value = 'base';
+  if (c && ALL_EXPERIMENTS.includes(c)) compareSel.value = c;
+  else {
+    const nonBase = ALL_EXPERIMENTS.find(e => e !== baseSel.value);
+    if (nonBase) compareSel.value = nonBase;
+  }
+}
+
+function writeHash() {
+  const params = new URLSearchParams();
+  params.set('base', baseSel.value);
+  params.set('compare', compareSel.value);
+  history.replaceState(null, '', '#' + params.toString());
+}
+
+readHash();
 
 document.getElementById('swap-btn').addEventListener('click', () => {
   const tmp = baseSel.value;
@@ -281,6 +299,7 @@ document.getElementById('swap-btn').addEventListener('click', () => {
   compareSel.value = tmp;
   update();
 });
+window.addEventListener('hashchange', () => { readHash(); update(); });
 
 function formatValue(metric, v) {
   if (v == null || Number.isNaN(v)) return 'n/a';
@@ -504,6 +523,7 @@ function renderExpInfo(baseName, compareName) {
 function update() {
   const baseName = baseSel.value;
   const compareName = compareSel.value;
+  writeHash();
   const comparison = computeComparison(baseName, compareName);
   document.getElementById('meta').textContent =
     ALL_EXPERIMENTS.length + ' experiments · ' +
