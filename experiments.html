@@ -35,6 +35,23 @@
       border: 1px solid #ccc; border-radius: 4px;
     }
 
+    .exp-info {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 12px; margin-bottom: 16px;
+    }
+    .exp-info-card {
+      border: 1px solid #eaeaea; border-radius: 8px; padding: 10px 14px;
+      font-size: 12px; line-height: 1.5;
+    }
+    .exp-info-card .exp-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+      color: #888; margin-bottom: 2px;
+    }
+    .exp-info-card .exp-name { font-weight: 700; }
+    .exp-info-card .exp-desc { color: #555; margin-top: 4px; }
+    .exp-info-card a { color: #1f77b4; text-decoration: none; font-size: 11px; }
+    .exp-info-card a:hover { text-decoration: underline; }
+
     .summary {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -102,15 +119,20 @@
   <div class="controls">
     <label>Base experiment:</label>
     <select id="base-select"></select>
-    <label style="margin-left:12px">Compare:</label>
+    <button id="swap-btn" title="Swap base and compare" style="
+      font-size:16px; background:none; border:1px solid #ccc;
+      border-radius:4px; cursor:pointer; padding:1px 7px; line-height:1.4;
+    ">&harr;</button>
+    <label>Compare:</label>
     <select id="compare-select"></select>
   </div>
+  <div class="exp-info" id="exp-info"></div>
   <div class="summary" id="summary"></div>
   <div class="charts-section" id="charts"></div>
   <table id="table"><thead></thead><tbody></tbody></table>
 </main>
 <script>
-const PAYLOAD = {"metrics": ["track_rewrite_time", "track_compile_time", "track_n_rewrites", "time_eval"], "metric_labels": {"track_rewrite_time": "rewrite_time", "track_compile_time": "compile_time", "track_n_rewrites": "n_rewrites", "time_eval": "eval"}, "metric_units": {"track_rewrite_time": "seconds", "track_compile_time": "seconds", "track_n_rewrites": "count", "time_eval": "seconds"}, "data": {"base": {"models.BEST": {"track_compile_time": 1.676632163000022, "track_n_rewrites": 1074.0, "track_rewrite_time": 1.329070922000028, "time_eval": 7.980866308248697e-06}, "models.GLM_hierarchical_binomial_rat_tumor": {"track_compile_time": 1.2182647900000347, "track_n_rewrites": 512.0, "track_rewrite_time": 0.6542715869999256, "time_eval": 1.1176226049487301e-05}, "models.bayesian_var_ireland": {"track_compile_time": 11.697609173999922, "track_n_rewrites": 1540.0, "track_rewrite_time": 2.5302293649999683, "time_eval": 3.3249888544747484e-05}, "models_discrete.occupancy_crossbill": {"track_compile_time": 0.019974795999928574, "track_n_rewrites": 181.0, "track_rewrite_time": 0.3443867040000441, "time_eval": 2.3007790187944156e-05}, "models.eight_schools_noncentered": {"track_compile_time": 0.008950506000019232, "track_n_rewrites": 335.0, "track_rewrite_time": 0.39754651900000226, "time_eval": 3.794696422380572e-06}, "models.frailty_coxph_individual": {"track_compile_time": 3.684312996000017, "track_n_rewrites": 712.0, "track_rewrite_time": 0.8158065640000132, "time_eval": 0.00074610342857032}, "models.gp_marginal_matern52": {"track_compile_time": 0.204944337000029, "track_n_rewrites": 986.0, "track_rewrite_time": 1.4369881860000078, "time_eval": 0.0006779615666611487}, "models.lkj_cholesky_cov_mvnormal": {"track_compile_time": 0.3470446510000329, "track_n_rewrites": 1338.0, "track_rewrite_time": 1.789003647999948, "time_eval": 0.00033545841935642053}, "models.marginalized_gaussian_mixture_model": {"track_compile_time": 0.06980979299999035, "track_n_rewrites": 1151.0, "track_rewrite_time": 1.2419363939999357, "time_eval": 9.556248305170041e-05}, "models.multilevel_varying_intercept_slope_noncentered": {"track_compile_time": 0.020970562000002246, "track_n_rewrites": 673.0, "track_rewrite_time": 0.69911839100007, "time_eval": 1.3484194717547162e-05}}, "revert_pr1615": {"models.BEST": {"track_compile_time": 2.7611223700000664, "track_n_rewrites": 1166.0, "track_rewrite_time": 1.4414076620000742, "time_eval": 1.3333773869300932e-05}, "models.GLM_hierarchical_binomial_rat_tumor": {"track_compile_time": 3.2447586430000683, "track_n_rewrites": 554.0, "track_rewrite_time": 0.6694144129999131, "time_eval": 1.8430185059360358e-05}, "models.bayesian_var_ireland": {"track_compile_time": 13.397990788000016, "track_n_rewrites": 1550.0, "track_rewrite_time": 2.4023514890000115, "time_eval": 3.899690248267721e-05}, "models_discrete.occupancy_crossbill": {"track_compile_time": 0.02974198200013234, "track_n_rewrites": 186.0, "track_rewrite_time": 0.3220939329999055, "time_eval": 3.166617448673779e-05}, "models.eight_schools_noncentered": {"track_compile_time": 0.016140852999797062, "track_n_rewrites": 351.0, "track_rewrite_time": 0.3704636099998879, "time_eval": 4.679405828589756e-06}, "models.frailty_coxph_individual": {"track_compile_time": 5.7041491259999475, "track_n_rewrites": 738.0, "track_rewrite_time": 0.839910307000082, "time_eval": 0.0008815948076954345}, "models.gp_marginal_matern52": {"track_compile_time": 0.218712984999911, "track_n_rewrites": 1051.0, "track_rewrite_time": 1.5256573649999154, "time_eval": 0.0005997342941153714}, "models.lkj_cholesky_cov_mvnormal": {"track_compile_time": 0.34153542499984724, "track_n_rewrites": 1343.0, "track_rewrite_time": 1.7533657330000096, "time_eval": 0.0003329586129035717}, "models.marginalized_gaussian_mixture_model": {"track_compile_time": 0.09043790600003376, "track_n_rewrites": 1163.0, "track_rewrite_time": 1.2256175719999192, "time_eval": 0.0001330338414629473}, "models.multilevel_varying_intercept_slope_noncentered": {"track_compile_time": 0.030154478999975254, "track_n_rewrites": 689.0, "track_rewrite_time": 0.6815649410000333, "time_eval": 1.5952549409987844e-05}}}, "run_shas": {"base": "a038ad0fc5", "revert_pr1615": "a038ad0fc5"}};
+const PAYLOAD = {"metrics": ["track_rewrite_time", "track_compile_time", "track_n_rewrites", "time_eval"], "metric_labels": {"track_rewrite_time": "rewrite_time", "track_compile_time": "compile_time", "track_n_rewrites": "n_rewrites", "time_eval": "eval"}, "metric_units": {"track_rewrite_time": "seconds", "track_compile_time": "seconds", "track_n_rewrites": "count", "time_eval": "seconds"}, "data": {"base": {"models.BEST": {"track_compile_time": 1.676632163000022, "track_n_rewrites": 1074.0, "track_rewrite_time": 1.329070922000028, "time_eval": 7.980866308248697e-06}, "models.GLM_hierarchical_binomial_rat_tumor": {"track_compile_time": 1.2182647900000347, "track_n_rewrites": 512.0, "track_rewrite_time": 0.6542715869999256, "time_eval": 1.1176226049487301e-05}, "models.bayesian_var_ireland": {"track_compile_time": 11.697609173999922, "track_n_rewrites": 1540.0, "track_rewrite_time": 2.5302293649999683, "time_eval": 3.3249888544747484e-05}, "models_discrete.occupancy_crossbill": {"track_compile_time": 0.019974795999928574, "track_n_rewrites": 181.0, "track_rewrite_time": 0.3443867040000441, "time_eval": 2.3007790187944156e-05}, "models.eight_schools_noncentered": {"track_compile_time": 0.008950506000019232, "track_n_rewrites": 335.0, "track_rewrite_time": 0.39754651900000226, "time_eval": 3.794696422380572e-06}, "models.frailty_coxph_individual": {"track_compile_time": 3.684312996000017, "track_n_rewrites": 712.0, "track_rewrite_time": 0.8158065640000132, "time_eval": 0.00074610342857032}, "models.gp_marginal_matern52": {"track_compile_time": 0.204944337000029, "track_n_rewrites": 986.0, "track_rewrite_time": 1.4369881860000078, "time_eval": 0.0006779615666611487}, "models.lkj_cholesky_cov_mvnormal": {"track_compile_time": 0.3470446510000329, "track_n_rewrites": 1338.0, "track_rewrite_time": 1.789003647999948, "time_eval": 0.00033545841935642053}, "models.marginalized_gaussian_mixture_model": {"track_compile_time": 0.06980979299999035, "track_n_rewrites": 1151.0, "track_rewrite_time": 1.2419363939999357, "time_eval": 9.556248305170041e-05}, "models.multilevel_varying_intercept_slope_noncentered": {"track_compile_time": 0.020970562000002246, "track_n_rewrites": 673.0, "track_rewrite_time": 0.69911839100007, "time_eval": 1.3484194717547162e-05}}, "revert_pr1615": {"models.BEST": {"track_compile_time": 2.7611223700000664, "track_n_rewrites": 1166.0, "track_rewrite_time": 1.4414076620000742, "time_eval": 1.3333773869300932e-05}, "models.GLM_hierarchical_binomial_rat_tumor": {"track_compile_time": 3.2447586430000683, "track_n_rewrites": 554.0, "track_rewrite_time": 0.6694144129999131, "time_eval": 1.8430185059360358e-05}, "models.bayesian_var_ireland": {"track_compile_time": 13.397990788000016, "track_n_rewrites": 1550.0, "track_rewrite_time": 2.4023514890000115, "time_eval": 3.899690248267721e-05}, "models_discrete.occupancy_crossbill": {"track_compile_time": 0.02974198200013234, "track_n_rewrites": 186.0, "track_rewrite_time": 0.3220939329999055, "time_eval": 3.166617448673779e-05}, "models.eight_schools_noncentered": {"track_compile_time": 0.016140852999797062, "track_n_rewrites": 351.0, "track_rewrite_time": 0.3704636099998879, "time_eval": 4.679405828589756e-06}, "models.frailty_coxph_individual": {"track_compile_time": 5.7041491259999475, "track_n_rewrites": 738.0, "track_rewrite_time": 0.839910307000082, "time_eval": 0.0008815948076954345}, "models.gp_marginal_matern52": {"track_compile_time": 0.218712984999911, "track_n_rewrites": 1051.0, "track_rewrite_time": 1.5256573649999154, "time_eval": 0.0005997342941153714}, "models.lkj_cholesky_cov_mvnormal": {"track_compile_time": 0.34153542499984724, "track_n_rewrites": 1343.0, "track_rewrite_time": 1.7533657330000096, "time_eval": 0.0003329586129035717}, "models.marginalized_gaussian_mixture_model": {"track_compile_time": 0.09043790600003376, "track_n_rewrites": 1163.0, "track_rewrite_time": 1.2256175719999192, "time_eval": 0.0001330338414629473}, "models.multilevel_varying_intercept_slope_noncentered": {"track_compile_time": 0.030154478999975254, "track_n_rewrites": 689.0, "track_rewrite_time": 0.6815649410000333, "time_eval": 1.5952549409987844e-05}}}, "run_shas": {"base": "a038ad0fc5", "revert_pr1615": "a038ad0fc5"}, "meta": {}, "repo_url": "https://github.com/ricardoV94/pymc-model-catalogue"};
 const METRICS = PAYLOAD.metrics;
 const METRIC_LABELS = PAYLOAD.metric_labels;
 const METRIC_UNITS = PAYLOAD.metric_units;
@@ -126,6 +148,13 @@ ALL_EXPERIMENTS.forEach(e => {
 if (ALL_EXPERIMENTS.includes('base')) baseSel.value = 'base';
 const nonBase = ALL_EXPERIMENTS.find(e => e !== baseSel.value);
 if (nonBase) compareSel.value = nonBase;
+
+document.getElementById('swap-btn').addEventListener('click', () => {
+  const tmp = baseSel.value;
+  baseSel.value = compareSel.value;
+  compareSel.value = tmp;
+  update();
+});
 
 function formatValue(metric, v) {
   if (v == null || Number.isNaN(v)) return 'n/a';
@@ -325,6 +354,27 @@ function renderTable(comparison, baseName, compareName) {
   });
 }
 
+function renderExpInfo(baseName, compareName) {
+  const container = document.getElementById('exp-info');
+  container.innerHTML = '';
+  [['base', baseName], ['compare', compareName]].forEach(([label, name]) => {
+    const m = PAYLOAD.meta[name];
+    const card = document.createElement('div');
+    card.className = 'exp-info-card';
+    let html = `<div class="exp-label">${label}</div>`;
+    html += `<div class="exp-name">${name}</div>`;
+    if (m && m.description) {
+      html += `<div class="exp-desc">${m.description.replace(/\n/g, ' ').trim()}</div>`;
+    }
+    if (m && m.yaml_path) {
+      const url = PAYLOAD.repo_url + '/blob/experiments/' + m.yaml_path;
+      html += `<a href="${url}" target="_blank">${m.yaml_path}</a>`;
+    }
+    card.innerHTML = html;
+    container.appendChild(card);
+  });
+}
+
 function update() {
   const baseName = baseSel.value;
   const compareName = compareSel.value;
@@ -332,6 +382,7 @@ function update() {
   document.getElementById('meta').textContent =
     ALL_EXPERIMENTS.length + ' experiments · ' +
     comparison.allModels.length + ' models';
+  renderExpInfo(baseName, compareName);
   renderSummary(comparison.summary);
   renderCharts(comparison, baseName, compareName);
   renderTable(comparison, baseName, compareName);
