@@ -121,7 +121,16 @@ jobs:
             rm -rf ".gh-pages/experiments/$name/$short"
             mkdir -p "$outdir"
             cp -a .asv/html/. "$outdir/"
+
+            # Write experiment metadata for the comparison dashboard.
+            python scripts/write_experiment_meta.py "$yaml_path" "$outdir/meta.json"
           done
+
+      - name: Regenerate experiment dashboard
+        run: |
+          if [ -d .gh-pages/experiments ]; then
+            python scripts/make_experiment_dashboard.py .gh-pages .gh-pages/experiments.html
+          fi
 
       - name: Push experiment results to gh-pages
         run: |
@@ -129,6 +138,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add experiments
+          [ -f experiments.html ] && git add experiments.html
           git commit -m "Publish experiment results" || echo "no changes"
           # Rebase onto any concurrent gh-pages update (e.g. a benchmark.yml
           # push) so our push stays fast-forward. We only staged experiments/
