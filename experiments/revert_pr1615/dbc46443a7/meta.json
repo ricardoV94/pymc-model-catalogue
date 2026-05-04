@@ -1,0 +1,1 @@
+{"name": "revert_pr1615", "description": "Revert the FusionOptimizer algorithm changes from pytensor#1615 (\"Speedup FusionOptimizer\"). Restores the pre-PR backtracking/deque algorithm in elemwise.py.\n", "yaml_path": "experiments/revert_pr1615.yaml", "base": "revert_pr1615_base"}
