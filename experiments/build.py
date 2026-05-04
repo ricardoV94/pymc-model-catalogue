@@ -61,7 +61,6 @@ def clone_at(repo: str, ref: str, dest: Path) -> None:
     if not dest.exists():
         run(["git", "clone", "--quiet", url, str(dest)])
     else:
-        # Ensure origin points at the right repo (may differ between experiments)
         cur = subprocess.check_output(
             ["git", "remote", "get-url", "origin"], cwd=dest, text=True
         ).strip()
