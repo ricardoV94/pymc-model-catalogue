@@ -161,6 +161,7 @@ _HTML_TEMPLATE = """<!doctype html>
   <h1>pymc-model-catalogue</h1>
   <span class="meta" id="meta"></span>
   <div class="links">
+    <a href="experiments.html">experiments</a>
     <a href="./">default asv view</a>
   </div>
 </header>

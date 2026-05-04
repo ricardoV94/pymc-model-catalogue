@@ -7,6 +7,7 @@ set of ~200 models extracted from pymc-examples. Each model is a standalone
 them in an asv `ModelBench` class and captures four metrics per model.
 
 **Dashboard:** https://ricardov94.github.io/pymc-model-catalogue/dashboard.html
+**Experiments:** https://ricardov94.github.io/pymc-model-catalogue/experiments.html
 
 ## Metrics
 

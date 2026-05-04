@@ -16,6 +16,7 @@ on:
     branches: [main]
     paths:
       - scripts/make_dashboard.py
+      - scripts/make_experiment_dashboard.py
 
 concurrency:
   group: custom-dashboard
@@ -48,6 +49,9 @@ jobs:
             exit 0
           fi
           python scripts/make_dashboard.py .gh-pages .gh-pages/dashboard.html
+          if [ -d .gh-pages/experiments ]; then
+            python scripts/make_experiment_dashboard.py .gh-pages .gh-pages/experiments.html
+          fi
 
       - name: Push
         run: |
@@ -57,10 +61,11 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add dashboard.html
+          [ -f experiments.html ] && git add experiments.html
           if git diff --cached --quiet; then
-            echo "dashboard.html unchanged — nothing to push"
+            echo "dashboards unchanged — nothing to push"
             exit 0
           fi
-          git commit -q -m "Regenerate custom dashboard"
+          git commit -q -m "Regenerate dashboards"
           git pull --rebase --autostash -q origin gh-pages 2>/dev/null || true
           git push -q origin gh-pages
