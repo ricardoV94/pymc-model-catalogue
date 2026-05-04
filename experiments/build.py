@@ -60,6 +60,13 @@ def clone_at(repo: str, ref: str, dest: Path) -> None:
     url = f"https://github.com/{repo}.git"
     if not dest.exists():
         run(["git", "clone", "--quiet", url, str(dest)])
+    else:
+        # Ensure origin points at the right repo (may differ between experiments)
+        cur = subprocess.check_output(
+            ["git", "remote", "get-url", "origin"], cwd=dest, text=True
+        ).strip()
+        if cur != url:
+            run(["git", "remote", "set-url", "origin", url], cwd=dest)
     for subcmd in (["revert", "--abort"], ["merge", "--abort"],
                    ["cherry-pick", "--abort"], ["am", "--abort"]):
         subprocess.run(["git", *subcmd], cwd=dest, check=False, capture_output=True)
