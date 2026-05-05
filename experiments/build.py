@@ -20,12 +20,12 @@ YAML schema::
     description: <str>
     pytensor:
       repo: pymc-devs/pytensor           # optional, default
-      ref: v3                            # any git ref
+      ref: main                          # any git ref
       revert_commits: [<sha>, ...]       # optional
       patches: [<path>, ...]             # optional
     pymc:
       repo: pymc-devs/pymc               # optional, default
-      ref: v6                            # any git ref
+      ref: main                          # any git ref
       revert_commits: [<sha>, ...]       # optional
       patches: [<path>, ...]             # optional
     models: [<module_path>, ...]         # optional; override default CORE
