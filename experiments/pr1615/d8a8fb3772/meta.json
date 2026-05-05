@@ -1,0 +1,1 @@
+{"name": "pr1615", "description": "pytensor@main, which has pytensor#1615 (\"Speedup FusionOptimizer\") merged. Compared against pr1615_base (same main with the PR reverted) to isolate the FusionOptimizer algorithm change.\n", "yaml_path": "experiments/pr1615.yaml", "base": "pr1615_base"}

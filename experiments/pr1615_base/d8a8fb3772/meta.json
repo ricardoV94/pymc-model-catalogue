@@ -1,0 +1,1 @@
+{"name": "pr1615_base", "description": "Control arm for pr1615. Approximates the pre-PR state by reverting the FusionOptimizer algorithm changes from pytensor#1615 (\"Speedup FusionOptimizer\") on top of pytensor@main, restoring the backtracking/deque algorithm in elemwise.py.\n", "yaml_path": "experiments/pr1615_base.yaml"}
