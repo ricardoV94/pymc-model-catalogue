@@ -8,10 +8,13 @@ Description: GEV distribution model for annual maximum sea-level data at Port Pi
 Changes from original:
 - Inlined Port Pirie data directly
 - Removed sampling, plotting, and comparison code
+- Set initval=0.1 on the shape parameter ξ: GenExtreme's logp gradient is
+  non-finite at ξ=0 (the Gumbel-limit removable singularity), which is the
+  interval-transform default start, so dlogp would be NaN at the initial point.
 
 Benchmark results:
-- Original:  logp = ..., grad norm = ..., ... us/call (... evals)
-- Frozen:    logp = ..., grad norm = ..., ... us/call (... evals)
+- Original:  logp = -9.4639, grad norm = 77.6850, 5.5 us/call (100000 evals)
+- Frozen:    logp = -9.4639, grad norm = 77.6850, 5.7 us/call (100000 evals)
 """
 
 import numpy as np
@@ -40,7 +43,7 @@ def build_model():
         # Priors
         mu = pm.Normal("μ", mu=3.8, sigma=0.2)
         sigma = pm.HalfNormal("σ", sigma=0.3)
-        xi = pm.TruncatedNormal("ξ", mu=0, sigma=0.2, lower=-0.6, upper=0.6)
+        xi = pm.TruncatedNormal("ξ", mu=0, sigma=0.2, lower=-0.6, upper=0.6, initval=0.1)
 
         # Estimation
         gev = pmx.GenExtreme("gev", mu=mu, sigma=sigma, xi=xi, observed=data)

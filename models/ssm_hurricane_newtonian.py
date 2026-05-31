@@ -12,8 +12,8 @@ Changes from original:
 - Removed sampling, forecasting, evaluation, and plotting code
 
 Benchmark results:
-- Original:  logp = ..., grad norm = ..., ... us/call (... evals)
-- Frozen:    logp = ..., grad norm = ..., ... us/call (... evals)
+- Original:  logp = -148.1224, grad norm = 29.6808, 589.6 us/call (24028 evals)
+- Frozen:    logp = -148.1224, grad norm = 29.6808, 546.9 us/call (27043 evals)
 """
 
 from pathlib import Path

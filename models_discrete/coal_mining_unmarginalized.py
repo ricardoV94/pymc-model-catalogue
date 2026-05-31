@@ -1,27 +1,29 @@
 """
-Model: Coal Mining Disasters Switchpoint (marginalized)
+Model: Coal Mining Disasters Switchpoint (unmarginalized)
 Source: pymc-examples/examples/howto/marginalizing-models.ipynb, Section: "Coal mining model"
 Authors: Rob Zinkov
-Description: Classic coal mining disasters switchpoint model with a discrete `switchpoint`
-    variable marginalized out via `pymc_extras.marginalize`. After marginalization the
-    only remaining free variables are the continuous `early_rate` and `late_rate`
-    Exponential priors, with a Poisson likelihood on the disaster counts (which contain
-    NaNs, so PyMC imputes the missing observations automatically).
+Description: Classic coal mining disasters switchpoint model with the discrete `switchpoint`
+    kept as a free variable (no marginalization). Free variables are the discrete
+    `switchpoint` DiscreteUniform, the continuous `early_rate` / `late_rate` Exponential
+    priors, and a Poisson likelihood on the disaster counts. The counts contain NaNs, so
+    PyMC also imputes the two missing observations as a discrete `disasters_unobserved`
+    free RV. Discrete model — benchmarked logp-only, no gradient.
+
+    Companion to `coal_mining_marginalized.py`, which marginalizes `switchpoint` out via
+    `pymc_extras.marginalize`. This file is the same model before that call.
 
 Changes from original:
 - Inlined coal mining disaster data
 - Removed sampling, plotting, and `recover_marginals` call
-- Returns the marginalized model (continuous-only) so logp/dlogp are well-defined
 
 Benchmark results:
-- Original:  logp = ..., grad norm = ..., ... us/call (... evals)
-- Frozen:    logp = ..., grad norm = ..., ... us/call (... evals)
+- Original:  logp = -231.8252, 2.1 us/call (100000 evals)
+- Frozen:    logp = -231.8252, 2.2 us/call (100000 evals)
 """
 
 import numpy as np
 import pandas as pd
 import pymc as pm
-import pymc_extras as pmx
 
 
 def build_model():
@@ -38,14 +40,12 @@ def build_model():
     # fmt: on
     years = np.arange(1851, 1962)
 
-    with pm.Model() as disaster_model:
+    with pm.Model() as model:
         switchpoint = pm.DiscreteUniform("switchpoint", lower=years.min(), upper=years.max())
         early_rate = pm.Exponential("early_rate", 1.0)
         late_rate = pm.Exponential("late_rate", 1.0)
         rate = pm.math.switch(switchpoint >= years, early_rate, late_rate)
         disasters = pm.Poisson("disasters", rate, observed=disaster_data)
-
-    model = pmx.marginalize(disaster_model, ["switchpoint"])
 
     ip = model.initial_point()
     model.rvs_to_initial_values = {rv: None for rv in model.free_RVs}
@@ -55,4 +55,4 @@ def build_model():
 if __name__ == "__main__":
     from _benchmark import run_benchmark
 
-    run_benchmark(build_model)
+    run_benchmark(build_model, discrete=True)
