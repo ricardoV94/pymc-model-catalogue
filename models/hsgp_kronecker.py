@@ -10,11 +10,13 @@ Changes from original:
 - Removed sampling, plotting, diagnostics
 - Inlined synthetic data generation with fixed seed
 - Hardcoded m_t, m_x, c_t, c_x from approx_hsgp_hyperparams output
+- Hardcoded LogNormal lengthscale priors (ell_t, ell_x), precomputed from
+  pz.maxent(LogNormal, lower=0.5, upper=4.0, mass=0.95) so the build needs no preliz
 - Added ip capture and initval clearing
 
 Benchmark results:
-- Original:  logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
-- Frozen:    logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+- Original:  logp = -5169.2052, grad norm = 579.7104, 64.5 us/call (100000 evals)
+- Frozen:    logp = -5169.2052, grad norm = 579.7104, 32.7 us/call (100000 evals)
 """
 
 from pathlib import Path
@@ -25,8 +27,6 @@ import pytensor.tensor as pt
 
 
 def build_model():
-    import preliz as pz
-
     def kronecker_HSGP(Xs, m, c, cov_t, cov_x):
         Xs_t, Xs_x = Xs
         m_t, m_x = m
@@ -68,7 +68,7 @@ def build_model():
     cov_t_true = pm.gp.cov.Matern52(input_dim=1, ls=ell_t_true)
     Kt = cov_t_true(t[:, None])
 
-    K = pt.slinalg.kron(Kx, Kt)
+    K = pt.linalg.kron(Kx, Kt)
     f_true = (
         pm.draw(
             pm.MvNormal.dist(mu=np.zeros(n_gps * n_t), cov=K), random_seed=rng
@@ -105,15 +105,13 @@ def build_model():
         Xs_x = Xx - xx_center
 
         # covariance on time GP
-        ell_t = pz.maxent(
-            pz.LogNormal(), lower=0.5, upper=4.0, mass=0.95, plot=False
-        ).to_pymc("ell_t")
+        # precomputed from pz.maxent(LogNormal, lower=0.5, upper=4.0, mass=0.95)
+        ell_t = pm.LogNormal("ell_t", mu=0.5991266870655623, sigma=0.4700784314311892)
         cov_t = pm.gp.cov.Matern52(1, ls=ell_t)
 
         # covariance on space GP
-        ell_x = pz.maxent(
-            pz.LogNormal(), lower=0.5, upper=4.0, mass=0.95, plot=False
-        ).to_pymc("ell_x")
+        # precomputed from pz.maxent(LogNormal, lower=0.5, upper=4.0, mass=0.95)
+        ell_x = pm.LogNormal("ell_x", mu=0.5991266870655623, sigma=0.4700784314311892)
         cov_x = pm.gp.cov.Matern52(1, ls=ell_x)
 
         # Kronecker GP

@@ -8,18 +8,18 @@ Description: 1D Hilbert Space GP approximation with Matern52 covariance on
 Changes from original:
 - Removed sampling, plotting, posterior predictive
 - Inlined synthetic data generation with fixed seed
-- Used preliz for lengthscale prior (pz.maxent -> LogNormal params)
+- Hardcoded LogNormal lengthscale prior, precomputed from
+  pz.maxent(LogNormal, lower=0.5, upper=5.0, mass=0.9) so the build needs no preliz
 - Added ip capture and initval clearing
 
 Benchmark results:
-- Original:  logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
-- Frozen:    logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+- Original:  logp = -3688.7606, grad norm = 2113.5036, 78.3 us/call (100000 evals)
+- Frozen:    logp = -3688.7606, grad norm = 2113.5036, 84.3 us/call (46969 evals)
 """
 
 from pathlib import Path
 
 import numpy as np
-import preliz as pz
 import pymc as pm
 
 
@@ -27,7 +27,7 @@ def build_model():
     seed = sum(map(ord, "hsgp"))
     rng = np.random.default_rng(seed)
 
-    x = 100.0 * np.sort(np.random.rand(2000))
+    x = 100.0 * np.sort(rng.random(2000))
 
     # Simulate 1D GP
     n = len(x)
@@ -43,17 +43,14 @@ def build_model():
     noise_dist = pm.Normal.dist(mu=0.0, sigma=sigma_true)
     y_obs = f_true + pm.draw(noise_dist, draws=n, random_seed=rng)
 
-    ell_dist = pz.maxent(
-        pz.LogNormal(), lower=0.5, upper=5.0, mass=0.9, plot=False
-    )
-
     coords = {
         "basis_coeffs": np.arange(200),
         "obs_id": np.arange(len(y_obs)),
     }
 
     with pm.Model(coords=coords) as model:
-        ell = ell_dist.to_pymc("ell")
+        # precomputed from pz.maxent(LogNormal, lower=0.5, upper=5.0, mass=0.9)
+        ell = pm.LogNormal("ell", mu=0.8307925109013862, sigma=0.5937605781861558)
         eta = pm.Exponential("eta", scale=1.0)
         cov_func = eta**2 * pm.gp.cov.Matern52(input_dim=1, ls=ell)
 

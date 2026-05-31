@@ -9,11 +9,13 @@ Description: Hierarchical GP with HSGP approximation. A mean GP (short + trend)
 Changes from original:
 - Removed sampling, plotting, prediction, diagnostics
 - Inlined synthetic data generation with fixed seed
+- Hardcoded InverseGamma trend-lengthscale prior, precomputed from
+  pz.maxent(InverseGamma, lower=5, upper=12, mass=0.95) so the build needs no preliz
 - Added ip capture and initval clearing
 
 Benchmark results:
-- Original:  logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
-- Frozen:    logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+- Original:  logp = -18047.9083, grad norm = 33560.1255, 205.8 us/call (59834 evals)
+- Frozen:    logp = -18047.9083, grad norm = 33560.1255, 39.8 us/call (100000 evals)
 """
 
 from pathlib import Path
@@ -24,8 +26,6 @@ import pytensor.tensor as pt
 
 
 def build_model():
-    import preliz as pz
-
     def matern52_psd(omega, ls):
         num = 2.0 * np.sqrt(np.pi) * pt.gamma(3.0) * pt.power(5.0, 5.0 / 2.0)
         den = 0.75 * pt.sqrt(np.pi)
@@ -142,9 +142,10 @@ def build_model():
         )
 
         eta_mu_trend = pm.Gamma("eta_mu_trend", mu=3.5, sigma=1)
-        ell_mu_trend = pz.maxent(
-            pz.InverseGamma(), lower=5, upper=12, mass=0.95, plot=False
-        ).to_pymc("ell_mu_trend")
+        # precomputed from pz.maxent(InverseGamma, lower=5, upper=12, mass=0.95)
+        ell_mu_trend = pm.InverseGamma(
+            "ell_mu_trend", alpha=21.358033987154855, beta=168.0607507099018
+        )
 
         # Prior for the offsets
         log_ell_delta_offset = pm.ZeroSumNormal(

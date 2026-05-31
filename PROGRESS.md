@@ -8,10 +8,10 @@ can produce multiple model files (e.g. `multilevel_modeling.ipynb` → 8 files,
 
 | Metric | Count |
 |---|---|
-| Model files done (continuous) | 174 |
-| Model files done (discrete) | 8 |
-| **Total model files done** | **182** |
-| Skipped model files (`.skip`) | 11 |
+| Model files done (continuous) | 182 |
+| Model files done (discrete) | 10 |
+| **Total model files done** | **192** |
+| Skipped model files (`.skip`) | 4 |
 | Notebooks fully addressed | 139 / 139 |
 | Notebooks remaining | 0 |
 
@@ -29,23 +29,23 @@ dependency, PyMC/PyTensor bug), not for "has a non-Numba-native Op".
 | Category | Notebooks | Notebooks done | Model files | Skipped files | Notebooks remaining |
 |---|---|---|---|---|---|
 | BART | 4 | 0 | 0 | 4 | 0 |
-| Case Studies | 16 | 14 | 17 | 2 | 0 |
+| Case Studies | 16 | 16 | 18 | 0 | 0 |
 | Causal Inference | 11 | 9 | 11 | 2 | 0 |
-| Diagnostics | 4 | 4 | 6 | 0 | 0 |
+| Diagnostics | 4 | 4 | 8 | 0 | 0 |
 | Fundamentals | 1 | 1 | 4 | 0 | 0 |
-| Gaussian Processes | 17 | 10 | 12 | 5 | 0 |
-| GLMs | 15 | 14 | 20 | 0 | 0 |
-| How-To | 12 | 12 | 16 | 2 | 0 |
+| Gaussian Processes | 17 | 12 | 17 | 1 | 0 |
+| GLMs | 15 | 14 | 30 | 0 | 0 |
+| How-To | 12 | 12 | 18 | 1 | 0 |
 | Introductory | 1 | 1 | 1 | 0 | 0 |
 | Mixture Models | 5 | 5 | 6 | 0 | 0 |
 | ODE Models | 4 | 4 | 7 | 0 | 0 |
 | Samplers | 8 | 8 | 10 | 0 | 0 |
 | Spatial | 3 | 3 | 3 | 0 | 0 |
-| Statistical Rethinking | 19 | 16 | 18 | 1 | 0 |
-| Survival Analysis | 5 | 5 | 10 | 0 | 0 |
+| Statistical Rethinking | 19 | 16 | 19 | 1 | 0 |
+| Survival Analysis | 5 | 5 | 14 | 0 | 0 |
 | Time Series | 9 | 9 | 22 | 0 | 0 |
 | Variational Inference | 5 | 5 | 4 | 0 | 0 |
-| **Total** | **139** | **120** | **182** | **16** | **0** |
+| **Total** | **139** | **124** | **192** | **9** | **0** |
 
 Rows where "Notebooks done" < (notebooks − skipped) because one notebook can yield zero
 extractable models (tutorial-only content counted as "done" when confirmed but produces 0
@@ -67,11 +67,7 @@ Also blocked on upstream dependencies (re-attempt once fixed):
 - **Statistical Rethinking lectures 02, 06, 20** — discussion-only, no `pm.Model`
 
 ### Missing dependencies
-- **GEV** (`GEV_port_pirie.py.skip`) — requires `pymc_extras`
-- **ssm_hurricane_tracking** (`ssm_hurricane_newtonian.py.skip`) — requires `pymc_extras`
-- **marginalizing-models** (`coal_mining_marginalized.py.skip`) — requires `pymc_extras` (uses `pmx.marginalize`)
 - **wrapping_jax_function** (`wrapping_jax_function_normal.py.skip`) — requires `jax` (not installed in .venv)
-- **HSGP-Basic / HSGP-Advanced** (4 skip files: `hsgp_basic_1d`, `hsgp_basic_2d_linearized`, `hsgp_hierarchical`, `hsgp_kronecker`) — require `preliz`
 - **GLM-ordinal-features** — requires R data file not available locally
 
 ### PyMC / PyTensor bugs

@@ -9,17 +9,18 @@ Description: 2D HSGP with Matern52 covariance using prior_linearized API,
 Changes from original:
 - Removed sampling, plotting, posterior predictive, prediction
 - Inlined synthetic data generation with fixed seed
+- Hardcoded LogNormal lengthscale prior, precomputed from
+  pz.maxent(LogNormal, lower=0.5, upper=5.0, mass=0.9) so the build needs no preliz
 - Added ip capture and initval clearing
 
 Benchmark results:
-- Original:  logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
-- Frozen:    logp = <value>, grad norm = <value>, <X.X> us/call (<N> evals)
+- Original:  logp = -8177.5670, grad norm = 7305.3856, 56313.7 us/call (324 evals)
+- Frozen:    logp = -8177.5670, grad norm = 7305.3856, 424.5 us/call (2639 evals)
 """
 
 from pathlib import Path
 
 import numpy as np
-import preliz as pz
 import pymc as pm
 
 
@@ -63,10 +64,8 @@ def build_model():
         beta = pm.Normal("beta", mu=0.0, sigma=10.0, shape=2)
 
         eta = pm.Exponential("eta", scale=2.0)
-        ell_dist = pz.maxent(
-            pz.LogNormal(), lower=0.5, upper=5.0, mass=0.9, plot=False
-        )
-        ell = ell_dist.to_pymc("ell")
+        # precomputed from pz.maxent(LogNormal, lower=0.5, upper=5.0, mass=0.9)
+        ell = pm.LogNormal("ell", mu=0.8307925109013862, sigma=0.5937605781861558)
 
         cov_func = eta**2 * pm.gp.cov.Matern52(input_dim=2, ls=ell)
 
