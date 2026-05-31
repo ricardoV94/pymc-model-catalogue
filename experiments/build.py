@@ -219,9 +219,20 @@ def patch_pytensor_mpm_cheap(clone_dir: Path) -> None:
 def run_smoke_test(venv_py: Path, code: str) -> None:
     """Run the experiment's smoke-test source with the built venv's python.
 
-    Non-zero exit raises (subprocess check=True), failing the build."""
+    The child's stdout is merged into *our* stderr so smoke-test prints
+    can't pollute the venv path build.py emits on stdout (callers capture
+    that path via command substitution). Non-zero exit fails the build."""
     print("[smoke] running smoke test", file=sys.stderr)
-    run([venv_py, "-c", code])
+    proc = subprocess.run(
+        [str(venv_py), "-c", code],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    if proc.stdout:
+        print(proc.stdout, file=sys.stderr, end="")
+    if proc.returncode != 0:
+        raise SystemExit(f"[smoke] FAILED (exit {proc.returncode})")
     print("[smoke] passed", file=sys.stderr)
 
 
