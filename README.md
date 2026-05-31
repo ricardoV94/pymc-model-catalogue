@@ -83,7 +83,13 @@ reproducible.
 3. Patches are `git format-patch`-style files — generate them from a
    manually-resolved clone and commit them under
    `experiments/patches/<your_experiment>/`.
-4. Push the branch; `experiment.yml` picks it up via the path filter.
+4. Optionally add a `smoke_test:` block — Python source run with the
+   built venv right after it's created. A non-zero exit (e.g. a failed
+   `assert`) fails the build before any benchmarking, so it's the place
+   to verify the refs/reverts/patches produced the source state you
+   expected (e.g. a feature's marker Op is — or, for the control arm,
+   is not — present in a trivial compiled graph).
+5. Push the branch; `experiment.yml` picks it up via the path filter.
 
 Experiments layer modifications on top of the `pytensor.ref` / `pymc.ref`
 pins. `build.py` clones both packages locally and installs them editable
