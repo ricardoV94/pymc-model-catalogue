@@ -29,6 +29,15 @@ YAML schema::
       revert_commits: [<sha>, ...]       # optional
       patches: [<path>, ...]             # optional
     models: [<module_path>, ...]         # optional; override default CORE
+    smoke_test: <python source>          # optional; see below
+
+``smoke_test`` is a block of Python source run with the freshly-built
+venv's interpreter (``python -c``) right after the venv is created. A
+non-zero exit (e.g. an ``assert`` or ``raise``) fails the build before
+any benchmarking, so it's the place to cheaply verify that the pinned
+refs / reverts / patches produced the source state you expected — for
+instance that a feature's marker Op is (or, for the control arm, is not)
+present in a trivial compiled graph.
 """
 
 from __future__ import annotations
@@ -207,6 +216,15 @@ def patch_pytensor_mpm_cheap(clone_dir: Path) -> None:
     print(f"[prepare:pytensor] applied _mpm_cheap no-op to {basic_py}", file=sys.stderr)
 
 
+def run_smoke_test(venv_py: Path, code: str) -> None:
+    """Run the experiment's smoke-test source with the built venv's python.
+
+    Non-zero exit raises (subprocess check=True), failing the build."""
+    print("[smoke] running smoke test", file=sys.stderr)
+    run([venv_py, "-c", code])
+    print("[smoke] passed", file=sys.stderr)
+
+
 def create_venv(venv_dir: Path, pymc_dir: Path, pytensor_dir: Path) -> None:
     if venv_dir.exists():
         shutil.rmtree(venv_dir)
@@ -238,8 +256,12 @@ def build(cfg: dict) -> Path:
 
     print(f"[build:{name}] creating venv", file=sys.stderr)
     create_venv(venv_dir, pymc_dir, pytensor_dir)
+    venv_py = venv_dir / "bin" / "python"
+    smoke = cfg.get("smoke_test")
+    if smoke:
+        run_smoke_test(venv_py, smoke)
     print(f"[build:{name}] done", file=sys.stderr)
-    return venv_dir / "bin" / "python"
+    return venv_py
 
 
 def main() -> None:
