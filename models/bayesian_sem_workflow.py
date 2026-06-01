@@ -169,7 +169,7 @@ def build_model():
         # Clean Causal Influence of Shocks
         eta = pm.Deterministic(
             "eta",
-            pt.slinalg.solve(I - B + 1e-8 * I, gamma.T).T,
+            pt.linalg.solve(I - B + 1e-8 * I, gamma.T).T,
             dims=("obs", "latent"),
         )
         # Influence of Exogenous indicator variables
