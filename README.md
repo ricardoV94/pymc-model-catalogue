@@ -1,99 +1,119 @@
 # pymc-model-catalogue
 
-ASV benchmark suite for [PyMC](https://github.com/pymc-devs/pymc) and
-[PyTensor](https://github.com/pymc-devs/pytensor), built around a curated
-set of ~200 models extracted from pymc-examples. Each model is a standalone
-`build_model() -> (Model, initial_point)` function; the benchmark wraps
-them in an asv `ModelBench` class and captures four metrics per model.
+A database of around 200 [PyMC](https://github.com/pymc-devs/pymc) models,
+collected for research on the PyMC / [PyTensor](https://github.com/pymc-devs/pytensor)
+stack. Each model is packaged as a `build_model()` function with the same
+signature, so you can load and run them in bulk — to test work on rewrites,
+compilation, sampling, or logp/grad performance against many models at once
+instead of a few hand-picked ones.
 
-**Dashboard:** https://ricardov94.github.io/pymc-model-catalogue/dashboard.html
-**Experiments:** https://ricardov94.github.io/pymc-model-catalogue/experiments.html
+The same model set also backs an ASV benchmark suite that tracks PyMC/PyTensor
+performance across releases (see
+[Benchmarking & the timeline](#benchmarking--the-timeline)).
 
-## Metrics
+## How the models are packaged
 
-- **`rewrite_time`** — wall-clock from calling `logp_dlogp_function` (or
-  `compile_logp` for discrete models) to the moment it returns. Covers
-  graph construction and the full rewriter pipeline.
-- **`compile_time`** — wall-clock from the end of the rewrite phase to
-  the end of the first `f(x)` call. Captures the NUMBA JIT cost, which
-  is triggered on first call; the one eval's worth of arithmetic inside
-  is microseconds, so the metric reflects compile cost in practice.
-- **`n_rewrites`** — number of `rewriting: ...` lines emitted under
-  `pytensor.config.optimizer_verbose = True`. A proxy for how many
-  rewrites the graph went through; shifts when rewrite rules are added
-  or removed.
-- **`time_eval`** — steady-state per-call time, measured by asv's native
-  timing machinery.
+Every file under `models/` and `models_discrete/` defines one `build_model()`
+that returns a PyMC model and a matching initial point:
 
-Each metric is tracked on a curated subset of 25 models listed in
-[`BENCHMARK_CORE.md`](./BENCHMARK_CORE.md), chosen to give broad coverage
-(hierarchical, GP, scan, linear algebra, survival, ODE, mixtures,
-discrete).
-
-## Branches
-
-- **`main`** — source of truth: asv infra (`asv_bench/`), the model set
-  (`models/`, `models_discrete/`), CI workflows, and the experiment
-  scaffolding (`experiments/build.py`). Nothing here is benchmark-result
-  state. `versions/tracked_versions.json` ships empty; the ledger is
-  advanced on `timeline`.
-- **`timeline`** — append-only. Each commit adds one pymc X.Y.0 release
-  to the ledger and becomes one data point on the dashboard. Created
-  and advanced by `backfill.yml` / `detect-releases.yml`; do not commit
-  here by hand.
-- **`experiments`** — holds `experiments/*.yaml` specs and their
-  `experiments/patches/` files. Rebased onto `main` whenever the schema
-  or infrastructure moves. Experiment results live under
-  `gh-pages/experiments/<name>/<short>/`, keyed by the last git SHA that
-  touched the YAML file.
-- **`gh-pages`** — the published dashboard. Written only by CI.
-
-## Running locally
-
-```bash
-# Smoke-test a single model directly (no asv, no timeline):
-python models/stochastic_volatility.py
-
-# Run asv against the current .venv for a curated subset:
-asv run --launch-method=spawn --environment=existing:$(which python) \
-  --set-commit-hash $(git rev-parse HEAD) \
-  --bench "$(python scripts/core_models.py)"
+```python
+def build_model() -> tuple[pm.Model, dict]:
+    ...
+    return model, initial_point
 ```
 
-## Workflows
+Data is either inlined or loaded from a bundled `.npz`, so importing a file is
+enough to build the model: there are no notebooks to run and nothing is fetched
+over the network. Each model is checked to give a finite logp and gradient at
+its initial point, both as written and after `freeze_dims_and_data` bakes in the
+dims and shapes. Models keep the form the original author used (`pm.Data`,
+`dims`, `pm.Deterministic`, and so on) rather than being rewritten into a
+canonical style.
 
-| Workflow | Trigger | What it does |
-|---|---|---|
-| `backfill.yml` | manual dispatch | Walks the timeline a `step` at a time. First dispatch creates the branch; `reset=true` wipes it back to main. |
-| `benchmark.yml` | push on `timeline`, weekly cron | Walks any new commits with `asv run --skip-existing-commits` and publishes after each — partial progress is durable across a single failing release. |
-| `detect-releases.yml` | daily cron | Polls PyPI for new pymc minors, opens a PR against `timeline`. Merging the PR kicks off `benchmark.yml`. |
-| `experiment.yml` | push on `experiments`, manual dispatch | Runs each changed YAML, keyed by the YAML file's last-touching git SHA for dedup. |
+## Quickstart
 
-The timeline CI uses a custom install hook (`asv_bench/_provision.py`)
-that installs `pymc==<pinned>` with `uv pip install --exclude-newer
-<released_at + 1 day>`, so pytensor and every transitive dep resolve to
-what was latest on each pymc release day — historical data points stay
-reproducible.
+```python
+from models.eight_schools_centered import build_model
 
-## Adding an experiment
+model, ip = build_model()        # a pm.Model + a valid initial point dict
 
-1. Check out the `experiments` branch (rebase on main first if stale).
-2. Copy `base.yaml` to `<your_experiment>.yaml` and add `revert_commits`
-   or `patches` on either the `pytensor` or `pymc` block.
-3. Patches are `git format-patch`-style files — generate them from a
-   manually-resolved clone and commit them under
-   `experiments/patches/<your_experiment>/`.
-4. Optionally add a `smoke_test:` block — Python source run with the
-   built venv right after it's created. A non-zero exit (e.g. a failed
-   `assert`) fails the build before any benchmarking, so it's the place
-   to verify the refs/reverts/patches produced the source state you
-   expected (e.g. a feature's marker Op is — or, for the control arm,
-   is not — present in a trivial compiled graph).
-5. Push the branch; `experiment.yml` picks it up via the path filter.
+with model:
+    idata = pm.sample()          # ...or compile model.logp(), inspect the graph, etc.
 
-Experiments layer modifications on top of the `pytensor.ref` / `pymc.ref`
-pins. `build.py` clones both packages locally and installs them editable
-so pymc and pytensor can be patched symmetrically.
+# Frozen form (dims/data baked in), e.g. for rewrite/compile studies:
+from pymc.model.transform.optimization import freeze_dims_and_data
+frozen, _ = build_model()
+frozen = freeze_dims_and_data(frozen)
+```
+
+For the exact logp/dlogp compilation used by the benchmarks (raveled input,
+NUMBA mode, version-robust across old pymc releases) reuse
+`models/_benchmark.py:build_logp_fn`.
+
+## What it's useful for
+
+- Seeing how a PyTensor rewrite change affects rewrite count, compile time, and
+  run time across many real graphs. The
+  [experiments](./BENCHMARKING.md#adding-an-experiment) setup can run the models
+  against a patched or reverted build of pymc or pytensor.
+- Sampling and posterior-geometry work. The set includes the reparameterisation
+  cases from Gorinova et al. (2019) — Neal's funnel, German credit, Election
+  '88, Electric Company — described in
+  [`AUTOREPARAM_MODELS.md`](./AUTOREPARAM_MODELS.md).
+- Tracking performance across pymc releases, which is what the timeline
+  dashboard does. Historical points pin every dependency to what was current on
+  each release day, so old numbers stay comparable.
+- Examples and teaching, since the catalogue covers most common modelling
+  patterns.
+
+## What's inside
+
+~200 model files, grouped roughly by area:
+
+- **GLMs & regression** — logistic, Poisson, negative-binomial, ordinal, robust,
+  truncated/censored, discrete-choice, rolling.
+- **Hierarchical / multilevel** — radon (the full Gelman series), eight schools
+  (centered + noncentered), partial pooling, varying intercepts/slopes.
+- **Gaussian processes** — latent/marginal GPs, HSGP, Kronecker, coregion,
+  log-Gaussian Cox.
+- **Time series** — AR, structural/Prophet-style, stochastic volatility, VAR,
+  Euler–Maruyama SDEs, scan-built generative graphs.
+- **ODEs** — Lotka–Volterra and SIR via several integration paths.
+- **Mixtures & nonparametrics** — Gaussian/Dirichlet mixtures, DP mixtures,
+  dependent density regression.
+- **Survival** — Cox PH, frailty, Weibull/log-logistic AFT.
+- **Spatial** — CAR, BYM.
+- **Causal inference** — diff-in-diff, regression discontinuity, mediation,
+  do-operator counterfactuals.
+- **Statistical Rethinking** — the `sr*` lecture models.
+- **Reparameterisation stress-tests** — see
+  [`AUTOREPARAM_MODELS.md`](./AUTOREPARAM_MODELS.md).
+
+Layout:
+
+- `models/` — continuous-latent models (NUTS-able; full logp + gradient).
+- `models_discrete/` — models with discrete free variables (logp-only path).
+  Observed discrete likelihoods stay in `models/`, since the continuous latents
+  still have well-defined gradients.
+- `models/data/`, `models_discrete/data/` — bundled `.npz` datasets.
+
+Most models are extracted from
+[pymc-examples](https://github.com/pymc-devs/pymc-examples); the rest come from
+Statistical Rethinking and from papers (provenance is in each file's docstring).
+Authoring conventions and the extraction template live in
+[`PLAN.md`](./PLAN.md); extraction status in [`PROGRESS.md`](./PROGRESS.md).
+
+## Benchmarking & the timeline
+
+The catalogue backs an ASV suite that tracks four metrics — `rewrite_time`,
+`compile_time`, `n_rewrites`, `time_eval` — on a curated 25-model core
+([`BENCHMARK_CORE.md`](./BENCHMARK_CORE.md)) across every pymc release, published
+to a [dashboard](https://ricardov94.github.io/pymc-model-catalogue/dashboard.html).
+A separate [experiments](https://ricardov94.github.io/pymc-model-catalogue/experiments.html)
+track runs the models against patched pymc/pytensor to A/B specific changes.
+
+Full details — metrics, the branch/CI layout, running asv locally, and adding an
+experiment — are in [`BENCHMARKING.md`](./BENCHMARKING.md).
 
 ## Requirements
 
